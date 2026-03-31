@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "RawMind",
+    "slug": "rawmind",
+    "version": "1.0.0",
+    "sdkVersion": "54.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a0a"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.rawmind.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0a0a0a"
+      },
+      "package": "com.rawmind.app"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "./app.plugin.js"
+    ],
+    "scheme": "rawmind",
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
