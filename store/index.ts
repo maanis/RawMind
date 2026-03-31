@@ -36,6 +36,10 @@ interface AppStore {
   sidebarOpen: boolean;
   setSidebarOpen: (v: boolean) => void;
 
+  // Bottom Sheet
+  nicheBottomSheetOpen: boolean;
+  setNicheBottomSheetOpen: (v: boolean) => void;
+
   // Hydration
   hydrate: () => Promise<void>;
 }
@@ -47,6 +51,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   chats: [],
   activeChatId: null,
   sidebarOpen: false,
+  nicheBottomSheetOpen: false,
 
   setNiche: (id) => {
     set({ nicheId: id });
@@ -64,6 +69,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setSidebarOpen: (v) => set({ sidebarOpen: v }),
+
+  setNicheBottomSheetOpen: (v) => set({ nicheBottomSheetOpen: v }),
 
   setActiveChat: (id) => {
     set({ activeChatId: id });

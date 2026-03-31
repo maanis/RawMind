@@ -8,7 +8,7 @@ export interface StreamChunk {
 }
 
 // Backend server URL - using your machine IP
-const BACKEND_URL = 'http://10.151.66.43:3000';
+const BACKEND_URL = 'http://10.151.66.190:3000';
 const REQUEST_TIMEOUT = 60000; // 60 seconds for long responses
 const CHUNK_BUFFER_SIZE = 20; // Micro-buffer: flush every 20 characters for optimal UI updates
 

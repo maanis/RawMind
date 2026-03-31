@@ -17,6 +17,7 @@ import { useChat } from '@/hooks/useChat';
 import { useTheme } from '@/hooks/useTheme';
 import { MessageBubble } from '@/components/MessageBubble';
 import { ChatInput } from '@/components/ChatInput';
+import { NicheBottomSheet } from '@/components/NicheBottomSheet';
 import { FONTS } from '@/constants/theme';
 import { NICHES } from '@/constants/niches';
 import { ChatMessage } from '@/types';
@@ -24,8 +25,15 @@ import { ChatMessage } from '@/types';
 export const ChatScreen: React.FC = () => {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { activeChatId, nicheId, religion, createChat, setSidebarOpen } =
-    useAppStore();
+  const {
+    activeChatId,
+    nicheId,
+    religion,
+    createChat,
+    setSidebarOpen,
+    nicheBottomSheetOpen,
+    setNicheBottomSheetOpen,
+  } = useAppStore();
 
   const chatId = activeChatId || '';
 
@@ -87,86 +95,100 @@ export const ChatScreen: React.FC = () => {
   );
 
   return (
-    // KeyboardAvoidingView — the CORRECT fix for keyboard layout
-    // behavior='padding' on iOS, nothing needed on Android with windowSoftInputMode=adjustResize
-    <KeyboardAvoidingView
-      style={[styles.root, { backgroundColor: colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={0}
-    >
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: insets.top + 8,
-            backgroundColor: colors.headerBackground,
-            borderBottomColor: colors.border,
-          },
-        ]}
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      {/* KeyboardAvoidingView — proper behavior for both iOS and Android */}
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
-        <TouchableOpacity
-          onPress={() => setSidebarOpen(true)}
-          style={styles.headerBtn}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        {/* Header */}
+        <View
+          style={[
+            styles.header,
+            {
+              paddingTop: insets.top + 8,
+              backgroundColor: colors.headerBackground,
+              borderBottomColor: colors.border,
+            },
+          ]}
         >
-          <Ionicons name="menu" size={22} color={colors.icon} />
-        </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setSidebarOpen(true)}
+            style={styles.headerBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="menu" size={22} color={colors.icon} />
+          </TouchableOpacity>
 
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerPersona, { color: colors.text, fontFamily: FONTS.serifMedium }]}>
-            {currentNiche?.icon} {currentNiche?.persona ?? 'RawMind'}
-          </Text>
+          <Pressable
+            onPress={() => setNicheBottomSheetOpen(true)}
+            style={styles.headerCenter}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={[styles.headerPersona, { color: colors.text, fontFamily: FONTS.serifMedium }]}>
+              {currentNiche?.icon} {currentNiche?.persona ?? 'RawMind'}
+            </Text>
+          </Pressable>
+
+          <TouchableOpacity
+            onPress={() => {
+              const newChat = createChat(nicheId, nicheId === 'religion' ? religion : undefined);
+            }}
+            style={styles.headerBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="add" size={22} color={colors.icon} />
+          </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          onPress={() => {
-            const newChat = createChat(nicheId, nicheId === 'religion' ? religion : undefined);
-          }}
-          style={styles.headerBtn}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="add" size={22} color={colors.icon} />
-        </TouchableOpacity>
-      </View>
+        {/* Messages — wrapped in Pressable to dismiss keyboard on tap */}
+        <Pressable style={{ flex: 1 }} onPress={Keyboard.dismiss}>
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            renderItem={renderItem}
+            keyExtractor={keyExtractor}
+            contentContainerStyle={[
+              styles.messageList,
+              messages.length === 0 && styles.messageListEmpty,
+              { flexGrow: 1 },
+            ]}
+            ListEmptyComponent={EmptyState}
+            onContentSizeChange={() => {
+              if (messages.length > 0) {
+                flatListRef.current?.scrollToEnd({ animated: false });
+              }
+            }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={true}
+            scrollEnabled={true}
+            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          />
+        </Pressable>
 
-      {/* Messages */}
-      <Pressable style={{ flex: 1 }} onPress={Keyboard.dismiss}>
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          contentContainerStyle={[
-            styles.messageList,
-            messages.length === 0 && styles.messageListEmpty,
-            { flexGrow: 1 },
-          ]}
-          ListEmptyComponent={EmptyState}
-          onContentSizeChange={() => {
-            if (messages.length > 0) {
-              flatListRef.current?.scrollToEnd({ animated: false });
-            }
-          }}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={true}
-          scrollEnabled={true}
-          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+        {/* Input — positioned naturally at bottom, moves with keyboard */}
+        <ChatInput
+          onSend={handleSend}
+          isStreaming={isStreaming}
+          onStop={stopStreaming}
         />
-      </Pressable>
+      </KeyboardAvoidingView>
 
-      {/* Input */}
-      <ChatInput
-        onSend={handleSend}
-        isStreaming={isStreaming}
-        onStop={stopStreaming}
+      {/* Bottom Sheet — overlays entire screen, animated separately */}
+      <NicheBottomSheet
+        visible={nicheBottomSheetOpen}
+        onClose={() => setNicheBottomSheetOpen(false)}
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   root: {
+    flex: 1,
+  },
+  keyboardAvoidingView: {
     flex: 1,
   },
   header: {
@@ -186,6 +208,7 @@ const styles = StyleSheet.create({
   headerCenter: {
     flex: 1,
     alignItems: 'center',
+    paddingHorizontal: 8,
   },
   headerPersona: {
     fontSize: 19,
