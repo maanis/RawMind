@@ -37,8 +37,8 @@
     "@babel/core": "^7.24.0",
     "@babel/plugin-syntax-import-meta": "^7.10.4",
     "@expo/cli": "^0.22.28",
-    "@types/react": "~18.2.79",
-    "typescript": "~5.3.3"
+    "@types/react": "~19.1.17",
+    "typescript": "~5.9.3"
   },
   "packageManager": "pnpm@10.32.1"
 }
