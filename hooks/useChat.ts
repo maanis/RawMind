@@ -14,9 +14,11 @@ export const useChat = (chatId: string) => {
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, targetChatId?: string) => {
       if (!text.trim() || isStreaming) return;
       setError(null);
+      const effectiveChatId = targetChatId ?? chatId;
+      const currentChat = chats.find((c) => c.id === effectiveChatId);
 
       // Add user message
       const userMsg: ChatMessage = {
@@ -25,7 +27,7 @@ export const useChat = (chatId: string) => {
         content: text.trim(),
         timestamp: Date.now(),
       };
-      addMessage(chatId, userMsg);
+      addMessage(effectiveChatId, userMsg);
 
       // Placeholder AI message
       const aiMsg: ChatMessage = {
@@ -34,7 +36,7 @@ export const useChat = (chatId: string) => {
         content: '',
         timestamp: Date.now(),
       };
-      addMessage(chatId, aiMsg);
+      addMessage(effectiveChatId, aiMsg);
 
       setIsStreaming(true);
       setStreamingText('');
@@ -43,30 +45,30 @@ export const useChat = (chatId: string) => {
       let accumulated = '';
 
       await streamChat(
-        messages,
+        currentChat?.messages ?? messages,
         text.trim(),
-        chat?.nicheId ?? nicheId,
-        chat?.religion ?? religion,
+        currentChat?.nicheId ?? nicheId,
+        currentChat?.religion ?? religion,
         (chunk) => {
           accumulated += chunk;
           setStreamingText(accumulated);
-          updateLastMessage(chatId, accumulated);
+          updateLastMessage(effectiveChatId, accumulated);
         },
         (full) => {
-          updateLastMessage(chatId, full);
+          updateLastMessage(effectiveChatId, full);
           setIsStreaming(false);
           setStreamingText('');
         },
         (err) => {
           setError(err);
-          updateLastMessage(chatId, `⚠️ ${err}`);
+          updateLastMessage(effectiveChatId, `⚠️ ${err}`);
           setIsStreaming(false);
           setStreamingText('');
         },
         abortRef.current.signal
       );
     },
-    [chatId, messages, isStreaming, nicheId, religion, chat]
+    [chatId, chats, messages, isStreaming, nicheId, religion, addMessage, updateLastMessage]
   );
 
   const stopStreaming = useCallback(() => {

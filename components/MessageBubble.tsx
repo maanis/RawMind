@@ -4,8 +4,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Pressable,
-  Alert,
 } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
@@ -20,7 +18,7 @@ interface Props {
 }
 
 export const MessageBubble: React.FC<Props> = ({ message, isStreaming }) => {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
 
@@ -130,7 +128,7 @@ export const MessageBubble: React.FC<Props> = ({ message, isStreaming }) => {
     fence: (node: any, children: any, parent: any, styles: any) => {
       const code = node.content ?? '';
       return (
-        <CodeBlock key={node.key} code={code} colors={colors} isDark={isDark} />
+        <CodeBlock key={node.key} code={code} colors={colors} />
       );
     },
   };
@@ -142,8 +140,14 @@ export const MessageBubble: React.FC<Props> = ({ message, isStreaming }) => {
         isUser ? styles.userContainer : styles.aiContainer,
       ]}
     >
-      <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble,
-        { backgroundColor: isUser ? colors.userBubble : 'transparent' }]}>
+      <View
+        style={[
+          styles.bubble,
+          isUser ? styles.userBubble : styles.aiBubble,
+          isUser ? styles.userBubbleWidth : styles.aiBubbleWidth,
+          { backgroundColor: isUser ? colors.userBubble : 'transparent' },
+        ]}
+      >
 
         {message.content.trim() !== '' ? (
           <View>
@@ -174,10 +178,9 @@ export const MessageBubble: React.FC<Props> = ({ message, isStreaming }) => {
 };
 
 // Separate code block component with copy
-const CodeBlock: React.FC<{ code: string; colors: any; isDark: boolean }> = ({
+const CodeBlock: React.FC<{ code: string; colors: any }> = ({
   code,
   colors,
-  isDark,
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -234,15 +237,16 @@ const TypingDots: React.FC<{ colors: any }> = ({ colors }) => (
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    marginVertical: 6,
-    paddingHorizontal: 12,
+    marginBottom: 10,
     alignItems: 'flex-start',
   },
   userContainer: {
     justifyContent: 'flex-end',
+    paddingHorizontal: 16,
   },
   aiContainer: {
     justifyContent: 'flex-start',
+    paddingHorizontal: 8,
   },
   avatar: {
     width: 28,
@@ -258,11 +262,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   bubble: {
-    maxWidth: '82%',
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 10,
     paddingBottom: 8,
+  },
+  userBubbleWidth: {
+    maxWidth: '84%',
+  },
+  aiBubbleWidth: {
+    width: '100%',
   },
   userBubble: {
     borderBottomRightRadius: 4,

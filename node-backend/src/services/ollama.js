@@ -13,7 +13,7 @@ const REQUEST_TIMEOUT = 120000; // 2 minutes for long responses
  * @param {string} model - Model name (optional, uses env default)
  * @returns {Promise<ReadableStream>}
  */
-async function streamChat(messages, model = OLLAMA_MODEL) {
+async function streamChat(messages, model = OLLAMA_MODEL, signal) {
   const url = `${OLLAMA_HOST}/api/chat`;
 
   const body = JSON.stringify({
@@ -28,6 +28,8 @@ async function streamChat(messages, model = OLLAMA_MODEL) {
   });
 
   const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  signal?.addEventListener('abort', abortFromCaller);
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
   try {
@@ -56,6 +58,8 @@ async function streamChat(messages, model = OLLAMA_MODEL) {
   } catch (error) {
     clearTimeout(timeoutId);
     throw error;
+  } finally {
+    signal?.removeEventListener('abort', abortFromCaller);
   }
 }
 
@@ -64,13 +68,17 @@ async function streamChat(messages, model = OLLAMA_MODEL) {
  * Yields text chunks one by one
  * @param {ReadableStream} stream - Ollama response stream
  */
-async function* parseOllamaStream(stream) {
+async function* parseOllamaStream(stream, signal) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
 
   try {
     while (true) {
+      if (signal?.aborted) {
+        return;
+      }
+
       const { done, value } = await reader.read();
 
       if (done) {
@@ -118,6 +126,11 @@ async function* parseOllamaStream(stream) {
       }
     }
   } finally {
+    try {
+      await reader.cancel();
+    } catch (e) {
+      // Ignore reader cancellation errors during shutdown/abort.
+    }
     reader.releaseLock();
   }
 }

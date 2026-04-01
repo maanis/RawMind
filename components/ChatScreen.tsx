@@ -1,11 +1,12 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import {
   View,
   FlatList,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   StyleSheet,
   TouchableOpacity,
   Text,
-  Pressable,
   Platform,
   KeyboardAvoidingView,
   Keyboard,
@@ -22,9 +23,13 @@ import { FONTS } from '@/constants/theme';
 import { NICHES } from '@/constants/niches';
 import { ChatMessage } from '@/types';
 
+const AUTO_SCROLL_THRESHOLD = 80;
+const COMPOSER_EXTRA_BOTTOM_PADDING = 14;
+
 export const ChatScreen: React.FC = () => {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const [androidKeyboardHeight, setAndroidKeyboardHeight] = useState(0);
   const {
     activeChatId,
     nicheId,
@@ -33,29 +38,66 @@ export const ChatScreen: React.FC = () => {
     setSidebarOpen,
     nicheBottomSheetOpen,
     setNicheBottomSheetOpen,
-  } = useAppStore();
+  } =
+    useAppStore();
 
   const chatId = activeChatId || '';
 
   const { messages, isStreaming, sendMessage, stopStreaming } = useChat(chatId);
 
-  const flatListRef = useRef<FlatList>(null);
+  const flatListRef = useRef<FlatList<ChatMessage>>(null);
+  const isNearBottomRef = useRef(true);
 
   const currentNiche = NICHES.find((n) => n.id === nicheId);
 
+  const scrollToBottom = useCallback((animated = true) => {
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToEnd({ animated });
+    });
+  }, []);
+
   useEffect(() => {
     if (messages.length > 0) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      isNearBottomRef.current = true;
+      scrollToBottom(true);
     }
-  }, [messages.length, isStreaming]);
+  }, [messages.length, isStreaming, scrollToBottom]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    const showSub = Keyboard.addListener('keyboardDidShow', (event) => {
+      setAndroidKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setAndroidKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      const distanceFromBottom =
+        contentSize.height - (contentOffset.y + layoutMeasurement.height);
+
+      isNearBottomRef.current = distanceFromBottom <= AUTO_SCROLL_THRESHOLD;
+    },
+    []
+  );
 
   const handleSend = useCallback(
     (text: string) => {
       if (!activeChatId) {
         const newChat = createChat(nicheId, nicheId === 'religion' ? religion : undefined);
-        // re-render will pick up new chatId
+        sendMessage(text, newChat.id);
+        return;
       }
       sendMessage(text);
     },
@@ -94,88 +136,114 @@ export const ChatScreen: React.FC = () => {
     </View>
   );
 
-  return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      {/* KeyboardAvoidingView — proper behavior for both iOS and Android */}
-      <KeyboardAvoidingView
-        style={styles.keyboardAvoidingView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
+  const composerBottomSpacing =
+    Platform.OS === 'ios'
+      ? insets.bottom + 8 + COMPOSER_EXTRA_BOTTOM_PADDING
+      : androidKeyboardHeight > 0
+        ? 8 + COMPOSER_EXTRA_BOTTOM_PADDING
+        : Math.max(insets.bottom, 8) + COMPOSER_EXTRA_BOTTOM_PADDING;
+
+  const chatContent = (
+    <>
+      <FlatList
+        ref={flatListRef}
+        data={messages}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        contentContainerStyle={[
+          styles.messageList,
+          messages.length === 0 && styles.messageListEmpty,
+        ]}
+        ListEmptyComponent={EmptyState}
+        onContentSizeChange={() => {
+          if (messages.length > 0 && isNearBottomRef.current) {
+            scrollToBottom(!isStreaming);
+          }
+        }}
+        onScroll={handleScroll}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        removeClippedSubviews={false}
+      />
+
+      <View
+        style={[
+          styles.inputWrap,
+          {
+            backgroundColor: colors.background,
+            borderTopColor: colors.border,
+            paddingBottom: composerBottomSpacing,
+          },
+        ]}
       >
-        {/* Header */}
-        <View
-          style={[
-            styles.header,
-            {
-              paddingTop: insets.top + 8,
-              backgroundColor: colors.headerBackground,
-              borderBottomColor: colors.border,
-            },
-          ]}
-        >
-          <TouchableOpacity
-            onPress={() => setSidebarOpen(true)}
-            style={styles.headerBtn}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="menu" size={22} color={colors.icon} />
-          </TouchableOpacity>
-
-          <Pressable
-            onPress={() => setNicheBottomSheetOpen(true)}
-            style={styles.headerCenter}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={[styles.headerPersona, { color: colors.text, fontFamily: FONTS.serifMedium }]}>
-              {currentNiche?.icon} {currentNiche?.persona ?? 'RawMind'}
-            </Text>
-          </Pressable>
-
-          <TouchableOpacity
-            onPress={() => {
-              const newChat = createChat(nicheId, nicheId === 'religion' ? religion : undefined);
-            }}
-            style={styles.headerBtn}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="add" size={22} color={colors.icon} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Messages — wrapped in Pressable to dismiss keyboard on tap */}
-        <Pressable style={{ flex: 1 }} onPress={Keyboard.dismiss}>
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            renderItem={renderItem}
-            keyExtractor={keyExtractor}
-            contentContainerStyle={[
-              styles.messageList,
-              messages.length === 0 && styles.messageListEmpty,
-              { flexGrow: 1 },
-            ]}
-            ListEmptyComponent={EmptyState}
-            onContentSizeChange={() => {
-              if (messages.length > 0) {
-                flatListRef.current?.scrollToEnd({ animated: false });
-              }
-            }}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={true}
-            scrollEnabled={true}
-            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-          />
-        </Pressable>
-
-        {/* Input — positioned naturally at bottom, moves with keyboard */}
         <ChatInput
           onSend={handleSend}
           isStreaming={isStreaming}
           onStop={stopStreaming}
         />
-      </KeyboardAvoidingView>
+      </View>
+    </>
+  );
 
-      {/* Bottom Sheet — overlays entire screen, animated separately */}
+  return (
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      {/* Header */}
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: insets.top + 8,
+            backgroundColor: colors.headerBackground,
+            borderBottomColor: colors.border,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          onPress={() => setSidebarOpen(true)}
+          style={styles.headerBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="menu" size={22} color={colors.icon} />
+        </TouchableOpacity>
+
+        <View style={styles.headerCenter}>
+          <Text style={[styles.headerPersona, { color: colors.text, fontFamily: FONTS.serifMedium }]}>
+            {currentNiche?.icon} {currentNiche?.persona ?? 'RawMind'}
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          onPress={() => {
+            createChat(nicheId, nicheId === 'religion' ? religion : undefined);
+          }}
+          style={styles.headerBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="add" size={22} color={colors.icon} />
+        </TouchableOpacity>
+      </View>
+
+      {Platform.OS === 'ios' ? (
+        <KeyboardAvoidingView
+          style={styles.content}
+          behavior="padding"
+          keyboardVerticalOffset={0}
+        >
+          {chatContent}
+        </KeyboardAvoidingView>
+      ) : (
+        <View
+          style={[
+            styles.content,
+            androidKeyboardHeight > 0 && { paddingBottom: androidKeyboardHeight },
+          ]}
+        >
+          {chatContent}
+        </View>
+      )}
+
       <NicheBottomSheet
         visible={nicheBottomSheetOpen}
         onClose={() => setNicheBottomSheetOpen(false)}
@@ -188,14 +256,14 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
-  keyboardAvoidingView: {
+  content: {
     flex: 1,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
@@ -208,19 +276,26 @@ const styles = StyleSheet.create({
   headerCenter: {
     flex: 1,
     alignItems: 'center',
-    paddingHorizontal: 8,
+    gap: 2,
   },
   headerPersona: {
     fontSize: 19,
     letterSpacing: -0.2,
+    textAlign: 'center',
   },
   messageList: {
-    paddingTop: 12,
-    paddingBottom: 8,
+    flexGrow: 1,
+    paddingTop: 16,
+    paddingBottom: 20,
   },
   messageListEmpty: {
     flex: 1,
     justifyContent: 'center',
+  },
+  inputWrap: {
+    paddingTop: 8,
+    paddingHorizontal: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   emptyState: {
     alignItems: 'center',

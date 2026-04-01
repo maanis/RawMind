@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
     View,
     StyleSheet,
@@ -6,16 +6,7 @@ import {
     Text,
     ScrollView,
     Dimensions,
-    Platform,
 } from 'react-native';
-import Animated, {
-    useSharedValue,
-    useAnimatedStyle,
-    withTiming,
-    FadeIn,
-    FadeOut,
-    runOnJS,
-} from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppStore } from '@/store';
@@ -26,8 +17,6 @@ import { NicheId, Religion } from '@/types';
 
 const { height: screenHeight } = Dimensions.get('window');
 const SHEET_HEIGHT = screenHeight * 0.7; // 70% of screen
-const CLOSED_Y = screenHeight;
-const OPEN_Y = screenHeight * 0.3; // 30% from top
 
 interface Props {
     visible: boolean;
@@ -37,93 +26,72 @@ interface Props {
 export const NicheBottomSheet: React.FC<Props> = ({ visible, onClose }) => {
     const { colors } = useTheme();
     const insets = useSafeAreaInsets();
-    const { nicheId, setNiche, religion, setReligion } = useAppStore();
+    const { nicheId, setNiche, religion, setReligion, createChat } = useAppStore();
+    const selectedNiche = NICHES.find((niche) => niche.id === nicheId);
 
-    const translateY = useSharedValue(CLOSED_Y);
-    const backdropOpacity = useSharedValue(0);
+    const getBadges = (id: NicheId) => {
+        const badges: string[] = ['Private'];
 
-    // Animation: Open sheet
-    useEffect(() => {
-        if (visible) {
-            translateY.value = withTiming(OPEN_Y, {
-                duration: 300,
-            });
-            backdropOpacity.value = withTiming(1, {
-                duration: 300,
-            });
-        } else {
-            translateY.value = withTiming(CLOSED_Y, {
-                duration: 250,
-            });
-            backdropOpacity.value = withTiming(0, {
-                duration: 250,
-            });
+        if (id === 'raw' || id === 'darkweb') {
+            badges.unshift('Unfiltered');
         }
-    }, [visible]);
 
-    const sheetAnimStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: translateY.value }],
-    }));
+        if (id === 'religion') {
+            badges.unshift('Guided');
+        }
 
-    const backdropAnimStyle = useAnimatedStyle(() => ({
-        opacity: backdropOpacity.value,
-    }));
+        return badges;
+    };
 
     const handleNicheSelect = (id: NicheId) => {
         setNiche(id);
         if (id !== 'religion') {
-            // Auto-close for non-religion niches
-            setTimeout(() => onClose(), 150);
+            createChat(id);
+            onClose();
         }
-        // For religion niche, keep sheet open to select religion
     };
 
     const handleReligionSelect = (r: Religion) => {
         setReligion(r);
-        setTimeout(() => onClose(), 150);
+        createChat('religion', r);
+        onClose();
     };
 
-    if (!visible && backdropOpacity.value === 0) {
+    if (!visible) {
         return null;
     }
 
     return (
-        <>
-            {/* Backdrop */}
-            <Animated.View
-                style={[styles.backdrop, backdropAnimStyle]}
-                pointerEvents={visible ? 'auto' : 'none'}
-            >
-                <Pressable
-                    style={StyleSheet.absoluteFill}
-                    onPress={onClose}
-                    hitSlop={0}
-                />
-            </Animated.View>
+        <View style={styles.overlay}>
+            <Pressable style={styles.backdrop} onPress={onClose} />
 
-            {/* Bottom Sheet */}
-            <Animated.View
+            <View
                 style={[
                     styles.sheet,
                     {
                         height: SHEET_HEIGHT,
                         backgroundColor: colors.background,
                         borderTopColor: colors.border,
+                        paddingBottom: insets.bottom,
                     },
-                    sheetAnimStyle,
                 ]}
-                pointerEvents={visible ? 'auto' : 'none'}
             >
-                {/* Header */}
                 <View
                     style={[
                         styles.header,
                         {
                             borderBottomColor: colors.border,
-                            paddingTop: insets.top || 16,
+                            backgroundColor: colors.surface,
                         },
                     ]}
                 >
+                    <Pressable
+                        onPress={onClose}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={[styles.closeButton, { backgroundColor: colors.background }]}
+                    >
+                        <Ionicons name="close" size={18} color={colors.text} />
+                    </Pressable>
                     <Text
                         style={[
                             styles.headerTitle,
@@ -133,177 +101,211 @@ export const NicheBottomSheet: React.FC<Props> = ({ visible, onClose }) => {
                             },
                         ]}
                     >
-                        Choose a Persona
+                        Modes
                     </Text>
-                    <Pressable
-                        onPress={onClose}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                        <Ionicons name="close" size={24} color={colors.text} />
-                    </Pressable>
+                    <View style={styles.headerSpacer} />
                 </View>
 
-                {/* Content */}
                 <ScrollView
                     style={styles.content}
-                    showsVerticalScrollIndicator={true}
+                    showsVerticalScrollIndicator={false}
                     scrollEventThrottle={16}
                 >
-                    {/* Niches Grid */}
-                    <View style={styles.nicheGrid}>
+
+
+                    <View style={styles.featuredWrap}>
+                        <View style={[styles.featuredCard, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+                            <View style={styles.featuredIconWrap}>
+                                <Text style={styles.featuredIcon}>{selectedNiche?.icon ?? '⚡'}</Text>
+                            </View>
+                            <View style={styles.featuredContent}>
+                                <Text style={[styles.featuredTitle, { color: colors.text, fontFamily: FONTS.sansSemiBold }]}>
+                                    Auto
+                                </Text>
+                                <Text style={[styles.featuredDesc, { color: colors.textMuted, fontFamily: FONTS.sans }]}>
+                                    Selects the best mode based on prompt
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
+
+                    <View style={styles.modeList}>
                         {NICHES.map((niche) => {
                             const isSelected = nicheId === niche.id;
-                            const isReligionSelected = niche.id === 'religion' && nicheId === 'religion';
+                            const badges = getBadges(niche.id);
 
                             return (
-                                <Pressable
+                                <View
                                     key={niche.id}
-                                    onPress={() => handleNicheSelect(niche.id)}
                                     style={[
-                                        styles.nicheCard,
+                                        styles.modeGroup,
                                         {
-                                            backgroundColor: isSelected
-                                                ? colors.surfaceAlt
-                                                : colors.surface,
-                                            borderColor: isSelected ? colors.text : colors.border,
-                                            borderWidth: isSelected ? 2 : 1,
+                                            borderBottomColor: colors.border,
+                                            backgroundColor: isSelected ? colors.surfaceAlt : colors.background,
                                         },
                                     ]}
                                 >
-                                    <Text style={styles.nicheIcon}>{niche.icon}</Text>
-                                    <Text
-                                        style={[
-                                            styles.nicheLabel,
-                                            {
-                                                color: colors.text,
-                                                fontFamily: FONTS.sansMedium,
-                                                fontWeight: isSelected ? '600' : '500',
-                                            },
-                                        ]}
+                                    <Pressable
+                                        onPress={() => handleNicheSelect(niche.id)}
+                                        style={styles.modeRow}
                                     >
-                                        {niche.label}
-                                    </Text>
-                                    <Text
-                                        style={[
-                                            styles.nicheDesc,
-                                            {
-                                                color: colors.textMuted,
-                                                fontFamily: FONTS.sans,
-                                            },
-                                        ]}
-                                        numberOfLines={2}
-                                    >
-                                        {niche.description}
-                                    </Text>
-                                    {isSelected && (
-                                        <View style={styles.checkmark}>
-                                            <Ionicons
-                                                name="checkmark-circle-sharp"
-                                                size={20}
-                                                color={colors.text}
-                                            />
+                                        <View style={styles.modeLeft}>
+                                            <View style={[styles.modeIconWrap, { backgroundColor: colors.surface }]}>
+                                                <Text style={styles.modeIcon}>{niche.icon}</Text>
+                                            </View>
+                                            <View style={styles.modeTextWrap}>
+                                                <View style={styles.modeTitleRow}>
+                                                    <Text
+                                                        style={[
+                                                            styles.modeTitle,
+                                                            {
+                                                                color: colors.text,
+                                                                fontFamily: FONTS.sansSemiBold,
+                                                            },
+                                                        ]}
+                                                    >
+                                                        {niche.persona}
+                                                    </Text>
+                                                    <Ionicons
+                                                        name="information-circle"
+                                                        size={14}
+                                                        color={colors.textMuted}
+                                                    />
+                                                </View>
+                                                <Text
+                                                    style={[
+                                                        styles.modeSubtitle,
+                                                        {
+                                                            color: colors.textMuted,
+                                                            fontFamily: FONTS.sans,
+                                                        },
+                                                    ]}
+                                                    numberOfLines={1}
+                                                >
+                                                    {niche.description}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                        <View style={styles.badgeWrap}>
+                                            {badges.map((badge) => (
+                                                <View
+                                                    key={`${niche.id}-${badge}`}
+                                                    style={[
+                                                        styles.badge,
+                                                        {
+                                                            backgroundColor:
+                                                                badge === 'Unfiltered'
+                                                                    ? '#DDF8F8'
+                                                                    : badge === 'Guided'
+                                                                        ? '#EEF2FF'
+                                                                        : '#F3E8FF',
+                                                        },
+                                                    ]}
+                                                >
+                                                    <Text
+                                                        style={[
+                                                            styles.badgeText,
+                                                            {
+                                                                color:
+                                                                    badge === 'Unfiltered'
+                                                                        ? '#0F766E'
+                                                                        : badge === 'Guided'
+                                                                            ? '#4F46E5'
+                                                                            : '#9333EA',
+                                                            },
+                                                        ]}
+                                                    >
+                                                        {badge}
+                                                    </Text>
+                                                </View>
+                                            ))}
+                                            {isSelected && (
+                                                <Ionicons
+                                                    name="checkmark-circle"
+                                                    size={18}
+                                                    color={colors.accent}
+                                                />
+                                            )}
+                                        </View>
+                                    </Pressable>
+
+                                    {niche.id === 'religion' && nicheId === 'religion' && (
+                                        <View style={styles.inlineReligionWrap}>
+                                            {RELIGIONS.map((r) => {
+                                                const isReligionSelected = religion === r.id;
+                                                return (
+                                                    <Pressable
+                                                        key={r.id}
+                                                        onPress={() => handleReligionSelect(r.id)}
+                                                        style={[
+                                                            styles.inlineReligionChip,
+                                                            {
+                                                                backgroundColor: isReligionSelected
+                                                                    ? colors.accentLight
+                                                                    : colors.surface,
+                                                                borderColor: isReligionSelected
+                                                                    ? colors.accent
+                                                                    : colors.border,
+                                                            },
+                                                        ]}
+                                                    >
+                                                        <Text style={styles.inlineReligionFlag}>{r.flag}</Text>
+                                                        <Text
+                                                            style={[
+                                                                styles.inlineReligionLabel,
+                                                                {
+                                                                    color: isReligionSelected
+                                                                        ? colors.accent
+                                                                        : colors.textSecondary,
+                                                                    fontFamily: FONTS.sansMedium,
+                                                                },
+                                                            ]}
+                                                            numberOfLines={1}
+                                                        >
+                                                            {r.label}
+                                                        </Text>
+                                                    </Pressable>
+                                                );
+                                            })}
                                         </View>
                                     )}
-                                </Pressable>
+                                </View>
                             );
                         })}
                     </View>
 
-                    {/* Religion Sub-Options (only show when religion is selected) */}
-                    {nicheId === 'religion' && (
-                        <View style={styles.religiousOptions}>
-                            <Text
-                                style={[
-                                    styles.subheader,
-                                    {
-                                        color: colors.text,
-                                        fontFamily: FONTS.serifMedium,
-                                    },
-                                ]}
-                            >
-                                Select Religion
-                            </Text>
-                            <View style={styles.religionGrid}>
-                                {RELIGIONS.map((r) => {
-                                    const isReligionSelected = religion === r.id;
-                                    return (
-                                        <Pressable
-                                            key={r.id}
-                                            onPress={() => handleReligionSelect(r.id)}
-                                            style={[
-                                                styles.religionCard,
-                                                {
-                                                    backgroundColor: isReligionSelected
-                                                        ? colors.surfaceAlt
-                                                        : colors.surface,
-                                                    borderColor: isReligionSelected
-                                                        ? colors.text
-                                                        : colors.border,
-                                                    borderWidth: isReligionSelected ? 2 : 1,
-                                                },
-                                            ]}
-                                        >
-                                            <Text style={styles.religionFlag}>{r.flag}</Text>
-                                            <Text
-                                                style={[
-                                                    styles.religionLabel,
-                                                    {
-                                                        color: colors.text,
-                                                        fontFamily: FONTS.sans,
-                                                        fontWeight: isReligionSelected ? '600' : '500',
-                                                    },
-                                                ]}
-                                            >
-                                                {r.label}
-                                            </Text>
-                                            {isReligionSelected && (
-                                                <Ionicons
-                                                    name="checkmark"
-                                                    size={16}
-                                                    color={colors.text}
-                                                    style={styles.religionCheck}
-                                                />
-                                            )}
-                                        </Pressable>
-                                    );
-                                })}
-                            </View>
-                        </View>
-                    )}
-
-                    {/* Bottom Padding */}
-                    <View style={{ height: insets.bottom + 16 }} />
+                    <View style={{ height: 16 }} />
                 </ScrollView>
-            </Animated.View>
-        </>
+            </View>
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
+    overlay: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'flex-end',
+        zIndex: 120,
+    },
+
     backdrop: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        zIndex: 99,
+        backgroundColor: 'rgba(0,0,0,0.4)',
     },
 
     sheet: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
         borderTopWidth: StyleSheet.hairlineWidth,
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
         overflow: 'hidden',
-        zIndex: 100,
     },
 
     header: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
+        justifyContent: 'space-between',
         paddingHorizontal: 16,
-        paddingBottom: 12,
+        paddingVertical: 14,
         borderBottomWidth: StyleSheet.hairlineWidth,
     },
 
@@ -312,88 +314,192 @@ const styles = StyleSheet.create({
         letterSpacing: -0.4,
     },
 
+    closeButton: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    headerSpacer: {
+        width: 32,
+        height: 32,
+    },
+
     content: {
         flex: 1,
-        paddingHorizontal: 12,
     },
 
-    nicheGrid: {
+    filterRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingHorizontal: 10,
         paddingVertical: 12,
-        gap: 10,
     },
 
-    nicheCard: {
-        borderRadius: 12,
-        padding: 12,
-        marginVertical: 6,
-        position: 'relative',
+    filterChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        borderRadius: 16,
+        paddingHorizontal: 12,
+        paddingVertical: 9,
     },
 
-    nicheIcon: {
-        fontSize: 28,
-        marginBottom: 8,
+    filterText: {
+        fontSize: 13,
     },
 
-    nicheLabel: {
+    filterActions: {
+        marginLeft: 'auto',
+        flexDirection: 'row',
+        gap: 14,
+        paddingRight: 4,
+    },
+
+    featuredWrap: {
+        paddingHorizontal: 10,
+        paddingBottom: 8,
+        paddingTop: 8,
+    },
+
+    featuredCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderRadius: 14,
+        paddingHorizontal: 12,
+        paddingVertical: 12,
+        gap: 12,
+    },
+
+    featuredIconWrap: {
+        width: 34,
+        alignItems: 'center',
+    },
+
+    featuredIcon: {
+        fontSize: 22,
+    },
+
+    featuredContent: {
+        flex: 1,
+    },
+
+    featuredTitle: {
         fontSize: 15,
-        letterSpacing: -0.3,
-        marginBottom: 4,
+        marginBottom: 3,
     },
 
-    nicheDesc: {
+    featuredDesc: {
         fontSize: 12,
         lineHeight: 16,
     },
 
-    checkmark: {
-        position: 'absolute',
-        top: 12,
-        right: 12,
+    modeList: {
+        paddingTop: 4,
     },
 
-    religiousOptions: {
-        marginTop: 20,
-        paddingBottom: 12,
+    modeGroup: {
+        borderBottomWidth: StyleSheet.hairlineWidth,
     },
 
-    subheader: {
-        fontSize: 16,
-        letterSpacing: -0.3,
-        marginBottom: 12,
-        paddingHorizontal: 4,
+    modeRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 14,
+        paddingVertical: 12,
     },
 
-    religionGrid: {
+    modeLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        paddingRight: 10,
+    },
+
+    modeIconWrap: {
+        width: 32,
+        height: 32,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+    },
+
+    modeIcon: {
+        fontSize: 18,
+    },
+
+    modeTextWrap: {
+        flex: 1,
+    },
+
+    modeTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        marginBottom: 3,
+    },
+
+    modeTitle: {
+        fontSize: 15,
+    },
+
+    modeSubtitle: {
+        fontSize: 12,
+        lineHeight: 16,
+    },
+
+    badgeWrap: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        flexWrap: 'wrap',
+        justifyContent: 'flex-end',
+        maxWidth: '42%',
+    },
+
+    badge: {
+        borderRadius: 999,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+    },
+
+    badgeText: {
+        fontSize: 10,
+        fontWeight: '600',
+    },
+
+    inlineReligionWrap: {
         flexDirection: 'row',
         flexWrap: 'wrap',
         gap: 8,
+        paddingHorizontal: 58,
+        paddingBottom: 14,
+        paddingTop: 2,
     },
 
-    religionCard: {
-        flex: 0.48,
-        borderRadius: 10,
-        paddingVertical: 12,
-        paddingHorizontal: 10,
+    inlineReligionChip: {
+        flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        position: 'relative',
-        minHeight: 80,
+        gap: 6,
+        borderWidth: 1,
+        borderRadius: 999,
+        paddingHorizontal: 10,
+        paddingVertical: 7,
     },
 
-    religionFlag: {
-        fontSize: 24,
-        marginBottom: 6,
+    inlineReligionFlag: {
+        fontSize: 13,
     },
 
-    religionLabel: {
+    inlineReligionLabel: {
         fontSize: 12,
-        textAlign: 'center',
         letterSpacing: -0.2,
-    },
-
-    religionCheck: {
-        position: 'absolute',
-        top: 8,
-        right: 8,
+        flexShrink: 0,
     },
 });
