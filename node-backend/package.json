@@ -11,7 +11,11 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js"
   },
-  "keywords": ["ollama", "streaming", "proxy"],
+  "keywords": [
+    "ollama",
+    "streaming",
+    "proxy"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
