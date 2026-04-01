@@ -1,18 +1,12 @@
 /**
- * Ollama Service - Handles streaming communication with Ollama
- * Uses native fetch for zero-dependency streaming
+ * Ollama Service — Streaming proxy for dolphin-llama3:8b-q4_0
+ * Raw mode: no safety, no filters, direct output
  */
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://localhost:11434';
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'dolphin-raw';
-const REQUEST_TIMEOUT = 120000; // 2 minutes for long responses
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'rawmind-v2';
+const REQUEST_TIMEOUT = 120000;
 
-/**
- * Stream chat completion from Ollama
- * @param {Array} messages - Array of {role, content} message objects
- * @param {string} model - Model name (optional, uses env default)
- * @returns {Promise<ReadableStream>}
- */
 async function streamChat(messages, model = OLLAMA_MODEL, signal) {
   const url = `${OLLAMA_HOST}/api/chat`;
 
@@ -21,9 +15,12 @@ async function streamChat(messages, model = OLLAMA_MODEL, signal) {
     messages,
     stream: true,
     options: {
-      temperature: 0.85,
+      temperature: 0.9,        // Higher = more raw, less filtered
       num_predict: 1024,
-      top_p: 0.9,
+      top_p: 0.92,
+      repeat_penalty: 1.1,     // Reduces repetitive safety phrasing
+      top_k: 40,
+      stop: [],                 // No stop tokens — let it run
     },
   });
 
@@ -35,9 +32,7 @@ async function streamChat(messages, model = OLLAMA_MODEL, signal) {
   try {
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body,
       signal: controller.signal,
     });
@@ -53,7 +48,6 @@ async function streamChat(messages, model = OLLAMA_MODEL, signal) {
       throw new Error('No response body from Ollama');
     }
 
-    // Return the readable stream directly
     return response.body;
   } catch (error) {
     clearTimeout(timeoutId);
@@ -63,11 +57,6 @@ async function streamChat(messages, model = OLLAMA_MODEL, signal) {
   }
 }
 
-/**
- * Parse NDJSON stream and extract text content
- * Yields text chunks one by one
- * @param {ReadableStream} stream - Ollama response stream
- */
 async function* parseOllamaStream(stream, signal) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -75,69 +64,40 @@ async function* parseOllamaStream(stream, signal) {
 
   try {
     while (true) {
-      if (signal?.aborted) {
-        return;
-      }
+      if (signal?.aborted) return;
 
       const { done, value } = await reader.read();
-
-      if (done) {
-        break;
-      }
+      if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-
-      // Process complete lines
       const lines = buffer.split('\n');
-      buffer = lines[lines.length - 1]; // Keep incomplete line in buffer
+      buffer = lines[lines.length - 1];
 
       for (let i = 0; i < lines.length - 1; i++) {
         const line = lines[i].trim();
         if (!line) continue;
-
         try {
           const json = JSON.parse(line);
           const content = json?.message?.content ?? '';
-
-          if (content) {
-            yield content;
-          }
-
-          // Check if generation is complete
-          if (json?.done) {
-            return;
-          }
+          if (content) yield content;
+          if (json?.done) return;
         } catch (e) {
-          // Skip malformed JSON lines
+          // skip malformed lines
         }
       }
     }
 
-    // Handle any remaining content
     if (buffer.trim()) {
       try {
         const json = JSON.parse(buffer);
         const content = json?.message?.content ?? '';
-        if (content) {
-          yield content;
-        }
-      } catch (e) {
-        // Skip if final buffer isn't valid JSON
-      }
+        if (content) yield content;
+      } catch (e) { }
     }
   } finally {
-    try {
-      await reader.cancel();
-    } catch (e) {
-      // Ignore reader cancellation errors during shutdown/abort.
-    }
+    try { await reader.cancel(); } catch (e) { }
     reader.releaseLock();
   }
 }
 
-module.exports = {
-  streamChat,
-  parseOllamaStream,
-  OLLAMA_HOST,
-  OLLAMA_MODEL,
-};
+module.exports = { streamChat, parseOllamaStream, OLLAMA_HOST, OLLAMA_MODEL };

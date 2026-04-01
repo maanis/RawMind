@@ -2,50 +2,25 @@ import { fetch as rnFetch } from 'react-native-fetch-api';
 import { ChatMessage, NicheId, Religion } from '@/types';
 import { getSystemPrompt, OLLAMA_MODEL, CONTEXT_WINDOW } from '@/constants/niches';
 
-export interface StreamChunk {
-  content: string;
-  done: boolean;
-}
-
-// Backend server URL - using your machine IP
 const BACKEND_URL = 'http://10.151.66.43:3000';
-const REQUEST_TIMEOUT = 60000; // 60 seconds for long responses
-const CHUNK_BUFFER_SIZE = 20; // Micro-buffer: flush every 20 characters for optimal UI updates
+const REQUEST_TIMEOUT = 60000;
+const CHUNK_BUFFER_SIZE = 20;
 
-/**
- * Sliding window context — keeps last N messages to control token usage
- */
-const buildContext = (messages: ChatMessage[]): { role: string; content: string }[] => {
-  const window = messages.slice(-CONTEXT_WINDOW);
-  return window.map((m) => ({ role: m.role, content: m.content }));
-};
+const buildContext = (messages: ChatMessage[]): { role: string; content: string }[] =>
+  messages.slice(-CONTEXT_WINDOW).map((m) => ({ role: m.role, content: m.content }));
 
-/**
- * Stream a chat completion from backend with true real-time streaming.
- * 
- * CRITICAL FIX:
- * - Uses react-native-fetch-api instead of default fetch
- * - Enables textStreaming: true for React Native streaming support
- * - Uses response.body.getReader() for true chunked streaming
- * - Processes chunks as they arrive (no buffering)
- * - Micro-buffers (20 chars) to optimize UI renders without jank
- * 
- * WHY THIS WORKS:
- * - Default React Native fetch: Buffers entire response before returning
- * - react-native-fetch-api: Supports streaming like browser fetch
- * - textStreaming: true: Enables Transfer-Encoding: chunked support
- */
 export const streamChat = async (
   messages: ChatMessage[],
   userMessage: string,
   nicheId: NicheId,
   religion: Religion | undefined,
+  customPrompt: string | undefined,
   onChunk: (chunk: string) => void,
   onDone: (fullText: string) => void,
   onError: (err: string) => void,
   signal?: AbortSignal
 ): Promise<void> => {
-  const systemPrompt = getSystemPrompt(nicheId, religion);
+  const systemPrompt = getSystemPrompt(nicheId, religion, customPrompt);
   const context = buildContext(messages);
 
   const requestBody = {
@@ -60,12 +35,9 @@ export const streamChat = async (
   let chunkBuffer = '';
 
   try {
-    // Create timeout controller
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
-    // FIX: Use react-native-fetch-api with streaming enabled
-    // Default React Native fetch doesn't support streaming - this does
     const response = await rnFetch(`${BACKEND_URL}/chat`, {
       method: 'POST',
       headers: {
@@ -74,7 +46,6 @@ export const streamChat = async (
       },
       body: JSON.stringify(requestBody),
       signal: signal || controller.signal,
-      // CRITICAL: Enable streaming for React Native
       reactNative: { textStreaming: true },
     });
 
@@ -86,94 +57,67 @@ export const streamChat = async (
       return;
     }
 
-    // Get the readable stream from response body
     const body = response.body;
     if (!body) {
-      throw new Error(
-        'Streaming not supported: response.body unavailable. ' +
-        'Ensure react-native-fetch-api is installed and backend sends chunked encoding.'
-      );
+      throw new Error('Streaming not supported: response.body unavailable.');
     }
 
-    // Get reader for true streaming (chunks arrive as they're generated)
     const reader = body.getReader?.();
     if (!reader) {
-      throw new Error(
-        'Streaming reader unavailable. ' +
-        'Ensure react-native-fetch-api is properly installed with npm install react-native-fetch-api'
-      );
+      throw new Error('Streaming reader unavailable.');
     }
 
     const decoder = new TextDecoder();
     let isStreamComplete = false;
 
-    // Read chunks as they arrive (NOT waiting for full response)
     while (!isStreamComplete) {
       try {
         const { done, value } = await reader.read();
 
         if (done) {
           isStreamComplete = true;
-          // Flush any remaining buffered content
           if (chunkBuffer.length > 0) {
             onChunk(chunkBuffer);
             fullText += chunkBuffer;
             chunkBuffer = '';
           }
+          // Persist final message
           onDone(fullText);
           return;
         }
 
-        // Decode chunk as it arrives (streaming mode)
         const decodedChunk = decoder.decode(value, { stream: true });
 
         if (decodedChunk) {
           fullText += decodedChunk;
           chunkBuffer += decodedChunk;
 
-          // Micro-buffer optimization:
-          // Flush when buffer reaches size to avoid too many synchronous UI updates
-          // This keeps latency low (~20ms) while preventing UI jank
           if (chunkBuffer.length >= CHUNK_BUFFER_SIZE) {
             onChunk(chunkBuffer);
             chunkBuffer = '';
           }
         }
       } catch (readerErr: any) {
-        // Handle stream reading errors
-        if (readerErr?.name === 'AbortError') {
-          console.warn('[Streaming Cancelled]');
-          return;
-        }
+        if (readerErr?.name === 'AbortError') return;
         throw readerErr;
       }
     }
   } catch (err: any) {
-    if (err?.name === 'AbortError') {
-      console.warn('[Streaming Cancelled]');
-      return;
-    }
+    if (err?.name === 'AbortError') return;
 
     const errorMsg = err?.message || String(err);
-    console.error('[Streaming Error]', errorMsg, err);
+    console.error('[Streaming Error]', errorMsg);
 
-    // Determine error type and provide actionable message
     if (errorMsg.includes('Failed to fetch') || errorMsg.includes('Network')) {
       onError(
         `Cannot reach backend at ${BACKEND_URL}\n\n` +
         `Checklist:\n` +
         `✓ Backend running: npm start (in node-backend folder)\n` +
-        `✓ Ollama running: pnpm ollama\n` +
-        `✓ Phone WiFi: Same network as ${BACKEND_URL.split(':')[1].slice(2)}\n` +
-        `✓ Library: npm install react-native-fetch-api`
+        `✓ Ollama running with dolphin-llama3:8b-q4_0\n` +
+        `✓ Phone WiFi: Same network as PC`
       );
-    } else if (errorMsg.includes('timeout') || errorMsg.includes('Timeout')) {
-      onError('Request timeout - Ollama took too long (> 60 seconds)');
-    } else if (errorMsg.includes('Streaming') || errorMsg.includes('unavailable')) {
-      onError(
-        `Streaming not available: ${errorMsg}\n\n` +
-        `Fix: npm install react-native-fetch-api`
-      );
+    } else if (errorMsg.includes('timeout')) {
+      onError('Request timeout — Ollama took too long (> 60s)');
     } else {
       onError(errorMsg || 'Unknown streaming error');
     }
@@ -181,8 +125,7 @@ export const streamChat = async (
 };
 
 /**
- * Non-streaming version for simpler use cases / summaries
- * Uses react-native-fetch-api for consistency
+ * Non-streaming single call — used for custom persona prompt refinement
  */
 export const chatOnce = async (
   systemPrompt: string,
@@ -201,12 +144,8 @@ export const chatOnce = async (
       reactNative: { textStreaming: true },
     });
 
-    if (!response.ok) {
-      throw new Error(`Backend error ${response.status}`);
-    }
-
-    const text = await response.text();
-    return text || '';
+    if (!response.ok) throw new Error(`Backend error ${response.status}`);
+    return (await response.text()) || '';
   } catch (err: any) {
     console.error('[chatOnce Error]', err.message);
     return '';
@@ -214,15 +153,30 @@ export const chatOnce = async (
 };
 
 /**
- * Summarize old messages to compress context
+ * Refines a rough user description into a tight, locked system prompt.
+ * Uses dolphin-llama3 itself for the refinement — meta prompt engineering.
  */
+export const buildCustomPersonaPrompt = async (userDescription: string): Promise<string> => {
+  const engineerPrompt = `You are an expert AI persona designer. The user wants to create a custom AI persona.
+Take their rough description and rewrite it as a precise system prompt that:
+1. Defines exactly who this AI is — name (invent one if not given), personality, speaking style, knowledge domain
+2. Sets clear behavioral rules — what it will discuss and how
+3. Stays under 120 words — brevity = lower latency
+4. Uses second person ("You are...")
+5. Has a strong voice — not generic
+
+Return ONLY the system prompt text. No explanation, no preamble, no quotes around it.`;
+
+  return chatOnce(engineerPrompt, `User's persona description: "${userDescription}"`);
+};
+
 export const summarizeMessages = async (messages: ChatMessage[]): Promise<string> => {
   const conversation = messages
     .map((m) => `${m.role === 'user' ? 'User' : 'AI'}: ${m.content}`)
     .join('\n');
 
   return chatOnce(
-    'You are a summarizer. Summarize the following conversation in 3-5 sentences, preserving key facts and context.',
+    'Summarize this conversation in 3-5 sentences, keeping key facts and context.',
     conversation
   );
 };

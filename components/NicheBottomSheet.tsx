@@ -26,7 +26,7 @@ interface Props {
 export const NicheBottomSheet: React.FC<Props> = ({ visible, onClose }) => {
     const { colors } = useTheme();
     const insets = useSafeAreaInsets();
-    const { nicheId, setNiche, religion, setReligion, createChat } = useAppStore();
+    const { nicheId, setNiche, religion, setReligion, createChat, setCustomPersonaSheetOpen } = useAppStore();
     const selectedNiche = NICHES.find((niche) => niche.id === nicheId);
 
     const getBadges = (id: NicheId) => {
@@ -44,6 +44,12 @@ export const NicheBottomSheet: React.FC<Props> = ({ visible, onClose }) => {
     };
 
     const handleNicheSelect = (id: NicheId) => {
+        if (id === 'custom') {
+            setNiche('custom');
+            onClose();
+            setCustomPersonaSheetOpen(true);
+            return;
+        }
         setNiche(id);
         if (id !== 'religion') {
             createChat(id);

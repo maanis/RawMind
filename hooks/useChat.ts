@@ -2,25 +2,36 @@ import { useRef, useState, useCallback } from 'react';
 import { useAppStore } from '@/store';
 import { streamChat } from '@/services/ai';
 import { ChatMessage } from '@/types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const useChat = (chatId: string) => {
-  const { chats, nicheId, religion, addMessage, updateLastMessage } = useAppStore();
+  const { chats, nicheId, religion, customPersonaPrompt, addMessage, updateLastMessage } =
+    useAppStore();
   const chat = chats.find((c) => c.id === chatId);
   const messages = chat?.messages ?? [];
 
   const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingText, setStreamingText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  const persistChats = useCallback(() => {
+    const currentChats = useAppStore.getState().chats;
+    AsyncStorage.setItem('@rawmind/chats', JSON.stringify(currentChats));
+  }, []);
 
   const sendMessage = useCallback(
     async (text: string, targetChatId?: string) => {
       if (!text.trim() || isStreaming) return;
       setError(null);
-      const effectiveChatId = targetChatId ?? chatId;
-      const currentChat = chats.find((c) => c.id === effectiveChatId);
 
-      // Add user message
+      const effectiveChatId = targetChatId ?? chatId;
+      const currentChat = useAppStore.getState().chats.find((c) => c.id === effectiveChatId);
+
+      // Use the chat's own niche/religion/customPrompt — isolated per chat
+      const chatNicheId = currentChat?.nicheId ?? nicheId;
+      const chatReligion = currentChat?.religion ?? religion;
+      const chatCustomPrompt = currentChat?.customPrompt ?? customPersonaPrompt;
+
       const userMsg: ChatMessage = {
         id: `msg_${Date.now()}`,
         role: 'user',
@@ -29,7 +40,6 @@ export const useChat = (chatId: string) => {
       };
       addMessage(effectiveChatId, userMsg);
 
-      // Placeholder AI message
       const aiMsg: ChatMessage = {
         id: `msg_${Date.now() + 1}`,
         role: 'assistant',
@@ -39,43 +49,45 @@ export const useChat = (chatId: string) => {
       addMessage(effectiveChatId, aiMsg);
 
       setIsStreaming(true);
-      setStreamingText('');
 
       abortRef.current = new AbortController();
       let accumulated = '';
 
+      // Use messages BEFORE adding user msg (context doesn't include current exchange yet)
+      const contextMessages = currentChat?.messages ?? messages;
+
       await streamChat(
-        currentChat?.messages ?? messages,
+        contextMessages,
         text.trim(),
-        currentChat?.nicheId ?? nicheId,
-        currentChat?.religion ?? religion,
+        chatNicheId,
+        chatReligion,
+        chatNicheId === 'custom' ? chatCustomPrompt : undefined,
         (chunk) => {
           accumulated += chunk;
-          setStreamingText(accumulated);
           updateLastMessage(effectiveChatId, accumulated);
         },
         (full) => {
           updateLastMessage(effectiveChatId, full);
           setIsStreaming(false);
-          setStreamingText('');
+          persistChats(); // persist after completion
         },
         (err) => {
           setError(err);
           updateLastMessage(effectiveChatId, `⚠️ ${err}`);
           setIsStreaming(false);
-          setStreamingText('');
+          persistChats();
         },
         abortRef.current.signal
       );
     },
-    [chatId, chats, messages, isStreaming, nicheId, religion, addMessage, updateLastMessage]
+    [chatId, chats, messages, isStreaming, nicheId, religion, customPersonaPrompt]
   );
 
   const stopStreaming = useCallback(() => {
     abortRef.current?.abort();
     setIsStreaming(false);
-    setStreamingText('');
+    persistChats();
   }, []);
 
-  return { messages, isStreaming, streamingText, error, sendMessage, stopStreaming };
+  return { messages, isStreaming, error, sendMessage, stopStreaming };
 };

@@ -19,6 +19,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { MessageBubble } from '@/components/MessageBubble';
 import { ChatInput } from '@/components/ChatInput';
 import { NicheBottomSheet } from '@/components/NicheBottomSheet';
+import { CustomPersonaSheet } from '@/components/CustomPersonaSheet';
 import { FONTS } from '@/constants/theme';
 import { NICHES } from '@/constants/niches';
 import { ChatMessage } from '@/types';
@@ -38,6 +39,8 @@ export const ChatScreen: React.FC = () => {
     setSidebarOpen,
     nicheBottomSheetOpen,
     setNicheBottomSheetOpen,
+    customPersonaSheetOpen,
+    setCustomPersonaSheetOpen,
   } =
     useAppStore();
 
@@ -62,6 +65,18 @@ export const ChatScreen: React.FC = () => {
       scrollToBottom(true);
     }
   }, [messages.length, isStreaming, scrollToBottom]);
+
+  // When niche changes, ensure a fresh chat is opened for that niche
+  // This gives strict prompt isolation — old chat stays in history untouched
+  const prevNicheRef = React.useRef(nicheId);
+  useEffect(() => {
+    if (prevNicheRef.current !== nicheId) {
+      prevNicheRef.current = nicheId;
+      if (nicheId !== 'custom') {
+        createChat(nicheId, nicheId === 'religion' ? religion : undefined);
+      }
+    }
+  }, [nicheId]);
 
   useEffect(() => {
     if (Platform.OS !== 'android') {
@@ -247,6 +262,10 @@ export const ChatScreen: React.FC = () => {
       <NicheBottomSheet
         visible={nicheBottomSheetOpen}
         onClose={() => setNicheBottomSheetOpen(false)}
+      />
+      <CustomPersonaSheet
+        visible={customPersonaSheetOpen}
+        onClose={() => setCustomPersonaSheetOpen(false)}
       />
     </View>
   );

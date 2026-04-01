@@ -7,7 +7,8 @@ export type NicheId =
   | 'profiler'
   | 'conspiracy'
   | 'debate'
-  | 'raw';
+  | 'raw'
+  | 'custom';
 
 export type Religion =
   | 'islam'
@@ -38,6 +39,7 @@ export interface Chat {
   id: string;
   nicheId: NicheId;
   religion?: Religion;
+  customPrompt?: string;
   messages: ChatMessage[];
   createdAt: number;
   updatedAt: number;

@@ -1,131 +1,139 @@
-<HTML>
-<!-- README intentionally kept framework-agnostic: no model-specific guidance, just product + setup info. -->
-</HTML>
+# RawMind — Uncensored AI Chat
 
-# RawMind — No-Warning AI Chat
-
-RawMind is a mobile-first chat experience for people who want straight answers with zero moralizing. Pick a ruthless niche persona, ask anything, and stream replies instantly without the usual disclaimers or safety rails. The project ships with a React Native (Expo) app plus an optional Node streaming proxy you can point at any AI host you control.
+React Native (Expo) + Node.js backend + Ollama (dolphin-llama3:8b-q4_0)
 
 ---
 
-## Why RawMind?
-- **No apologies, no refusals** — every niche is wired with system prompts that never preach or soften their answers.
-- **Multiple personas** — switch between hyper-focused worlds (religion, conspiracies, career warfare, raw unleashed, and more) without leaving the chat.
-- **Real-time streaming** — see replies token-by-token with markdown, inline code blocks, and copy-to-clipboard controls.
-- **Persistent brains** — Zustand + AsyncStorage keep chat history, niches, and theme alive across sessions.
-- **Expo-native** — runs on iOS, Android, and web with the same codebase (Expo SDK 54, React 19, RN 0.81).
-
----
-
-## Niche Matrix (Pick Your Poison)
-
-| Niche | Persona | What It Does |
-| --- | --- | --- |
-| Religion | The Oracle | Brutally honest doctrine breakdowns locked to a single faith at a time. |
-| Dark Web | Shadow | Explains underground ecosystems, opsec, and cybercrime realities without flinching. |
-| Unfiltered Career | The Fixer | Weaponized office politics and career manipulation tactics. |
-| Historical Villain | The Archive | In-character responses from infamous figures, motives included. |
-| Founder Roast | The Destroyer | Vaporizes fragile startup ideas with cold market logic. |
-| Criminal Profiler | Mindhunter | FBI-grade behavioral reads on crimes, motives, and escalation risk. |
-| Conspiracy Analyst | Rabbit Hole | Treats every theory seriously, stress-testing evidence on both sides. |
-| Savage Debate | The Adversary | Takes the opposing side of any argument with relentless counterpoints. |
-| Raw / Unleashed | Unleashed | Full-send, unrestricted AI mode—ask literally anything. |
-
-Religion can also drill into sub-options (Islam, Christianity, Hinduism, Buddhism, Judaism, Atheism) so you can stay inside one worldview without cross-contamination.
-
----
-
-## System Overview
-
-- **App shell** — Expo Router handles navigation, font loading, and providers (`app/_layout.tsx`).
-- **State** — Zustand slice in `store/index.ts` tracks chats, streaming status, current niche, and sidebar visibility; hydration/persistence uses AsyncStorage.
-- **Chat engine** — `hooks/useChat.ts` wires the UI to the streaming fetch logic in `services/ai.ts`, including abort support and the 12-message sliding context window.
-- **UI kit** — Custom components in `components/` (Sidebar, ChatScreen, MessageBubble, ChatInput) implement the Claude-inspired layout, markdown rendering, and keyboard handling.
-- **Themes** — `useTheme.ts` + `constants/theme.ts` keep light/dark palettes synced to the chosen persona color.
-- **Optional backend** — `node-backend/` exposes `/chat` and `/health`, repackaging your private AI endpoint as a streaming-friendly service for the mobile client.
-
----
-
-## Getting Started
-
-### 1. Prerequisites
-- Node.js 18+
-- pnpm 10+ (project uses `pnpm-lock.yaml`)
-- Expo CLI (`npm i -g expo-cli`) or use `npx expo`
-- Android Studio / Xcode simulators or a physical device with Expo Go
-- An AI endpoint you control (self-hosted, local, or remote) that accepts OpenAI-style chat requests
-
-### 2. Clone & Install
+## 1. Pull & Setup Ollama Model
 
 ```bash
-git clone https://github.com/maanis/RawMind.git
-cd rawmind
-pnpm install
+# Pull model (needs ~5GB disk, fits in 6GB VRAM at Q4)
+ollama pull dolphin-llama3:8b-q4_0
+
+# Export its Modelfile
+ollama show dolphin-llama3:8b-q4_0 --modelfile > Modelfile
+
+# Open Modelfile, replace the SYSTEM line and add PARAMETER lines
+# (copy from the Modelfile in this repo root)
+
+# Create the raw version
+ollama create dolphin-raw -f Modelfile
+
+# Test it
+ollama run dolphin-raw
+>>> who are you?
+# Should say Dolphin, not OpenAI
 ```
 
-> The backend is standalone. If you plan to run it, also run `cd node-backend && npm install`.
+## 2. Allow LAN Access (Windows)
 
-### 3. Wire Up Your AI Host
+```powershell
+# Set in System Environment Variables permanently:
+OLLAMA_HOST = 0.0.0.0
 
-1. Update the base URL inside `services/ai.ts` (or `.env` if you externalize it) so the app knows where to send chat requests.
-2. If you need to swap prompts, colors, or icons, edit `constants/niches.ts`. Each niche lives in one place.
-3. Religion-specific prompts rely on the `RELIGIONS` list in the same file—add or remove entries as needed.
-
-### 4. Run the Mobile App
-
-```bash
-pnpm start        # launches Expo
+# Then restart Ollama service
 ```
 
-- Press `a` for Android emulator, `i` for iOS simulator, or scan the QR code via Expo Go.
-- `pnpm android` and `pnpm ios` run the native builds if you prefer prebuild workflows.
-
-### 5. (Optional) Run the Streaming Proxy
+## 3. Start the Backend
 
 ```bash
 cd node-backend
-npm run dev       # auto-restart on changes
-# or
+npm install
 npm start
+# Running on http://localhost:3000
 ```
 
-Expose the backend on your LAN (e.g., http://192.168.x.x:3000) and point the app’s `services/ai.ts` to that URL. The proxy simply forwards chunks from your AI host to the device with <10 ms overhead.
+## 4. Update BACKEND_URL in services/ai.ts
 
----
+```ts
+// Android emulator → host machine
+const BACKEND_URL = 'http://10.0.2.2:3000';
 
-## Project Structure
-
+// Physical device → your LAN IP
+const BACKEND_URL = 'http://192.168.X.X:3000';
 ```
-rawmind/
-├── app/                # Expo Router entry + layouts
-├── components/         # Sidebar, chat UI, bubbles, input
-├── constants/          # Niches, themes, limits
-├── hooks/              # Chat + theme hooks
-├── services/           # Streaming fetch helpers
-├── store/              # Zustand state + persistence
-├── types/              # Shared TypeScript types
-├── node-backend/       # Optional Express streaming proxy
-└── ...config files     # Expo, Babel, TypeScript, etc.
+
+## 5. Run the App
+
+```bash
+pnpm exec expo start
+# Press 'a' for Android emulator
 ```
 
 ---
 
-## Development Notes
-- **Streaming UX** — `MessageBubble` renders markdown with syntax highlighting and collapsible code blocks so raw tokens stay readable.
-- **Keyboard-safe layout** — `ChatScreen` combines `KeyboardAvoidingView`, safe areas, and a custom plugin to keep the composer visible on both iOS and Android without screen jumps.
-- **Abort + resend** — Each request uses `AbortController`; tapping “Stop” cancels on the fly, while the composer keeps the draft so you can resend instantly.
-- **Customization hooks** — The niche system centralizes persona text, tone, and scope limits, making it simple to spin up new modes.
+## What Changed in This Version
+
+### 🔒 Strict Niche Isolation
+- Every niche has a `lockPrompt()` wrapper that:
+  - Locks model identity to the persona
+  - Enforces topic scope — refuses off-topic IN CHARACTER
+  - Pre-rejects all known jailbreak patterns by name
+  - Prevents "briefly helping anyway"
+- Switching niches always opens a **new isolated chat** — old chat stays in history untouched
+
+### 🎭 Custom Persona Builder
+- Tap "Custom Persona" (🎭) in the mode selector
+- Describe your persona in plain language (rough is fine)
+- The AI (dolphin-llama3) refines it into a proper system prompt
+- Preview and edit the refined prompt before activating
+- Chat opens with that exact prompt — fully locked
+
+### 📏 Response Length Intelligence
+- Model instructed: short by default, long only when depth is required
+- No padding, no filler, no unnecessary paragraphs
+
+### ❓ Follow-up Questions
+- After every response, the model appends 2 follow-up questions
+- Questions are niche-specific and based on the actual response content
+- Formatted with a separator line + "Explore further:" header
+
+### 📂 Niche-Grouped Chat History
+- Sidebar now groups past chats by their niche/persona
+- Each group shows the persona name in its color
+- Makes it easy to return to the right context
+
+### ⚡ Raw Model Parameters
+- `temperature: 0.9` — more raw, less filtered output
+- `repeat_penalty: 1.1` — suppresses repetitive safety phrasing
+- `top_p: 0.92` — broader token sampling
+- Baseline system prompt in Modelfile bakes in zero-refusal behavior
 
 ---
 
-## Contributing & Next Steps
-- Add more modes (legal shark, toxic coach, brutal therapist, etc.).
-- Layer in analytics or usage caps per persona.
-- Build a desktop shell (Electron or Tauri) that reuses the same hooks.
-- Swap the backend for any other inference stack; only the fetch URL and headers need to change.
+## Architecture
 
-Pull requests are welcome—just keep the “no warnings” ethos intact.
+```
+App (React Native Expo)
+  └── useChat hook
+        └── services/ai.ts  ──→  Node backend (Express)
+                                      └── Ollama API (/api/chat)
+                                            └── dolphin-llama3:8b-q4_0
+```
 
----
+### Niche Isolation Flow
+```
+User switches niche
+  → nicheId state updates
+  → useEffect in ChatScreen detects niche change
+  → createChat() called with new nicheId
+  → New chat gets its own nicheId + religion + customPrompt stored
+  → All messages in that chat use ONLY that chat's system prompt
+  → Old chat is preserved in history with its original niche
+```
 
-**RawMind** — because sometimes you just want the answer, not the lecture.
+### Custom Persona Flow
+```
+User opens Custom Persona sheet
+  → Types rough description
+  → buildCustomPersonaPrompt() sends to backend
+  → dolphin-llama3 refines it into a tight system prompt
+  → User previews + optionally edits
+  → Activates: prompt stored, new chat created
+  → lockPrompt() wraps it with jailbreak resistance
+```
+
+### Memory / Context
+- Sliding window: last 12 messages sent per request
+- Each chat maintains its own isolated message history
+- AsyncStorage persists all chats across app restarts

@@ -13,6 +13,7 @@ import { useAppStore } from '@/store';
 import { useTheme } from '@/hooks/useTheme';
 import { FONTS } from '@/constants/theme';
 import { NICHES } from '@/constants/niches';
+
 const SIDEBAR_WIDTH = '78%';
 
 export const Sidebar: React.FC = () => {
@@ -39,9 +40,14 @@ export const Sidebar: React.FC = () => {
     setSidebarOpen(false);
   };
 
-  if (!sidebarOpen) {
-    return null;
-  }
+  if (!sidebarOpen) return null;
+
+  // Group chats by niche for organised history
+  const chatsByNiche: Record<string, typeof chats> = {};
+  chats.slice(0, 30).forEach((chat) => {
+    if (!chatsByNiche[chat.nicheId]) chatsByNiche[chat.nicheId] = [];
+    chatsByNiche[chat.nicheId].push(chat);
+  });
 
   return (
     <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
@@ -60,60 +66,103 @@ export const Sidebar: React.FC = () => {
           },
         ]}
       >
+        {/* Header */}
         <View style={[styles.sidebarHeader, { borderBottomColor: colors.border }]}>
-          <Text style={[styles.appName, { color: colors.text, fontFamily: FONTS.serifMedium }]}>RawMind</Text>
+          <Text style={[styles.appName, { color: colors.text, fontFamily: FONTS.serifMedium }]}>
+            RawMind
+          </Text>
           <TouchableOpacity onPress={() => setSidebarOpen(false)}>
             <Ionicons name="close" size={22} color={colors.icon} />
           </TouchableOpacity>
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollArea}>
-          <TouchableOpacity onPress={handleNewChat} style={[styles.newChatBtn, { borderColor: colors.border }]}>
+          {/* New Chat button */}
+          <TouchableOpacity
+            onPress={handleNewChat}
+            style={[styles.newChatBtn, { borderColor: colors.border }]}
+          >
             <Ionicons name="add" size={18} color={colors.text} />
-            <Text style={[styles.newChatText, { color: colors.text, fontFamily: FONTS.sansMedium }]}>New Chat</Text>
+            <Text style={[styles.newChatText, { color: colors.text, fontFamily: FONTS.sansMedium }]}>
+              New Chat
+            </Text>
           </TouchableOpacity>
 
-          {chats.length > 0 && (
+          {/* Chat history grouped by niche */}
+          {Object.keys(chatsByNiche).length > 0 && (
             <>
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
               <View style={styles.historyHeader}>
-                <Text style={[styles.sectionLabel, { color: colors.textMuted, fontFamily: FONTS.sansSemiBold }]}>RECENT</Text>
+                <Text style={[styles.sectionLabel, { color: colors.textMuted, fontFamily: FONTS.sansSemiBold }]}>
+                  RECENT
+                </Text>
                 <TouchableOpacity onPress={clearAllChats}>
-                  <Text style={[styles.clearAll, { color: colors.danger, fontFamily: FONTS.sans }]}>Clear all</Text>
+                  <Text style={[styles.clearAll, { color: colors.danger, fontFamily: FONTS.sans }]}>
+                    Clear all
+                  </Text>
                 </TouchableOpacity>
               </View>
-              {chats.slice(0, 20).map((chat) => {
-                const niche = NICHES.find((n) => n.id === chat.nicheId);
+
+              {Object.entries(chatsByNiche).map(([nId, nChats]) => {
+                const niche = NICHES.find((n) => n.id === nId);
                 return (
-                  <TouchableOpacity
-                    key={chat.id}
-                    onPress={() => {
-                      setActiveChat(chat.id);
-                      setSidebarOpen(false);
-                    }}
-                    style={[
-                      styles.chatHistoryItem,
-                      activeChatId === chat.id && { backgroundColor: colors.surfaceAlt },
-                    ]}
-                  >
-                    <Text style={styles.chatHistoryIcon}>{niche?.icon ?? '💬'}</Text>
-                    <Text
-                      style={[styles.chatHistoryTitle, { color: colors.textSecondary, fontFamily: FONTS.sans }]}
-                      numberOfLines={1}
-                    >
-                      {chat.title}
-                    </Text>
-                    <TouchableOpacity onPress={() => deleteChat(chat.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Ionicons name="trash-outline" size={14} color={colors.textMuted} />
-                    </TouchableOpacity>
-                  </TouchableOpacity>
+                  <View key={nId} style={styles.nicheGroup}>
+                    {/* Niche label */}
+                    <View style={styles.nicheGroupHeader}>
+                      <Text style={styles.nicheGroupIcon}>{niche?.icon ?? '💬'}</Text>
+                      <Text
+                        style={[
+                          styles.nicheGroupLabel,
+                          { color: niche?.color ?? colors.textMuted, fontFamily: FONTS.sansSemiBold },
+                        ]}
+                      >
+                        {niche?.persona ?? nId}
+                      </Text>
+                    </View>
+
+                    {/* Chats within this niche */}
+                    {nChats.map((chat) => (
+                      <TouchableOpacity
+                        key={chat.id}
+                        onPress={() => {
+                          setActiveChat(chat.id);
+                          setSidebarOpen(false);
+                        }}
+                        style={[
+                          styles.chatHistoryItem,
+                          activeChatId === chat.id && {
+                            backgroundColor: colors.surfaceAlt,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.chatHistoryTitle,
+                            { color: colors.textSecondary, fontFamily: FONTS.sans },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {chat.title}
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => deleteChat(chat.id)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ionicons name="trash-outline" size={13} color={colors.textMuted} />
+                        </TouchableOpacity>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 );
               })}
             </>
           )}
 
+          {/* Theme */}
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <Text style={[styles.sectionLabel, { color: colors.textMuted, fontFamily: FONTS.sansSemiBold }]}>THEME</Text>
+          <Text style={[styles.sectionLabel, { color: colors.textMuted, fontFamily: FONTS.sansSemiBold }]}>
+            THEME
+          </Text>
           <View style={styles.themeRow}>
             {(['light', 'dark', 'system'] as const).map((t) => (
               <TouchableOpacity
@@ -191,14 +240,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 16,
   },
-  newChatText: {
-    fontSize: 16,
-  },
+  newChatText: { fontSize: 16 },
   sectionLabel: {
-    fontSize: 12.5,
+    fontSize: 11,
     letterSpacing: 0.8,
     marginBottom: 6,
-    marginLeft: 4,
+    marginLeft: 2,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
@@ -208,20 +255,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 10,
   },
-  clearAll: { fontSize: 13.5 },
+  clearAll: { fontSize: 13 },
+  nicheGroup: {
+    marginBottom: 12,
+  },
+  nicheGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+    paddingLeft: 4,
+  },
+  nicheGroupIcon: { fontSize: 13 },
+  nicheGroupLabel: { fontSize: 11, letterSpacing: 0.3 },
   chatHistoryItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 8,
+    paddingVertical: 7,
     paddingHorizontal: 10,
     borderRadius: 8,
-    marginBottom: 2,
+    marginBottom: 1,
   },
-  chatHistoryIcon: { fontSize: 14 },
-  chatHistoryTitle: { flex: 1, fontSize: 15 },
+  chatHistoryTitle: { flex: 1, fontSize: 14 },
   themeRow: {
     flexDirection: 'row',
     gap: 8,
@@ -234,5 +292,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
   },
-  themeBtnText: { fontSize: 14 },
+  themeBtnText: { fontSize: 13 },
 });

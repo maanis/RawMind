@@ -9,38 +9,41 @@ const STORAGE_KEYS = {
   THEME: '@rawmind/theme',
   CHATS: '@rawmind/chats',
   ACTIVE_CHAT: '@rawmind/active_chat',
+  CUSTOM_PROMPT: '@rawmind/custom_prompt',
 };
 
 interface AppStore {
-  // Niche
   nicheId: NicheId;
   religion: Religion;
   setNiche: (id: NicheId) => void;
   setReligion: (r: Religion) => void;
 
-  // Theme
+  // Custom persona
+  customPersonaPrompt: string;
+  setCustomPersonaPrompt: (p: string) => void;
+
   theme: Theme;
   setTheme: (t: Theme) => void;
 
-  // Chats
   chats: Chat[];
   activeChatId: string | null;
   setActiveChat: (id: string | null) => void;
-  createChat: (nicheId: NicheId, religion?: Religion) => Chat;
+  createChat: (nicheId: NicheId, religion?: Religion, customPrompt?: string) => Chat;
   addMessage: (chatId: string, message: ChatMessage) => void;
   updateLastMessage: (chatId: string, content: string) => void;
   deleteChat: (chatId: string) => void;
   clearAllChats: () => void;
 
-  // Sidebar
   sidebarOpen: boolean;
   setSidebarOpen: (v: boolean) => void;
 
-  // Bottom Sheet
   nicheBottomSheetOpen: boolean;
   setNicheBottomSheetOpen: (v: boolean) => void;
 
-  // Hydration
+  // Custom persona builder sheet
+  customPersonaSheetOpen: boolean;
+  setCustomPersonaSheetOpen: (v: boolean) => void;
+
   hydrate: () => Promise<void>;
 }
 
@@ -52,6 +55,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   activeChatId: null,
   sidebarOpen: false,
   nicheBottomSheetOpen: false,
+  customPersonaSheetOpen: false,
+  customPersonaPrompt: '',
 
   setNiche: (id) => {
     set({ nicheId: id });
@@ -63,26 +68,32 @@ export const useAppStore = create<AppStore>((set, get) => ({
     AsyncStorage.setItem(STORAGE_KEYS.RELIGION, r);
   },
 
+  setCustomPersonaPrompt: (p) => {
+    set({ customPersonaPrompt: p });
+    AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_PROMPT, p);
+  },
+
   setTheme: (t) => {
     set({ theme: t });
     AsyncStorage.setItem(STORAGE_KEYS.THEME, t);
   },
 
   setSidebarOpen: (v) => set({ sidebarOpen: v }),
-
   setNicheBottomSheetOpen: (v) => set({ nicheBottomSheetOpen: v }),
+  setCustomPersonaSheetOpen: (v) => set({ customPersonaSheetOpen: v }),
 
   setActiveChat: (id) => {
     set({ activeChatId: id });
     if (id) AsyncStorage.setItem(STORAGE_KEYS.ACTIVE_CHAT, id);
   },
 
-  createChat: (nicheId, religion) => {
+  createChat: (nicheId, religion, customPrompt) => {
     const niche = NICHES.find((n) => n.id === nicheId)!;
     const chat: Chat = {
       id: `chat_${Date.now()}`,
       nicheId,
       religion,
+      customPrompt,
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -99,7 +110,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const chats = get().chats.map((c) => {
       if (c.id !== chatId) return c;
       const messages = [...c.messages, message];
-      // Update title from first user message
       const title =
         c.messages.length === 0 && message.role === 'user'
           ? message.content.slice(0, 40) + (message.content.length > 40 ? '…' : '')
@@ -119,13 +129,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return { ...c, messages, updatedAt: Date.now() };
     });
     set({ chats });
+    // Debounced persist — don't hammer AsyncStorage on every token
+    // Persist happens on done/error in useChat
   },
 
   deleteChat: (chatId) => {
     const chats = get().chats.filter((c) => c.id !== chatId);
-    const activeChatId = get().activeChatId === chatId ? null : get().activeChatId;
+    const activeChatId = get().activeChatId === chatId ? (chats[0]?.id ?? null) : get().activeChatId;
     set({ chats, activeChatId });
     AsyncStorage.setItem(STORAGE_KEYS.CHATS, JSON.stringify(chats));
+    if (activeChatId) AsyncStorage.setItem(STORAGE_KEYS.ACTIVE_CHAT, activeChatId ?? '');
   },
 
   clearAllChats: () => {
@@ -136,13 +149,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   hydrate: async () => {
     try {
-      const [nicheId, religion, theme, chatsRaw, activeChatId] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.NICHE),
-        AsyncStorage.getItem(STORAGE_KEYS.RELIGION),
-        AsyncStorage.getItem(STORAGE_KEYS.THEME),
-        AsyncStorage.getItem(STORAGE_KEYS.CHATS),
-        AsyncStorage.getItem(STORAGE_KEYS.ACTIVE_CHAT),
-      ]);
+      const [nicheId, religion, theme, chatsRaw, activeChatId, customPrompt] =
+        await Promise.all([
+          AsyncStorage.getItem(STORAGE_KEYS.NICHE),
+          AsyncStorage.getItem(STORAGE_KEYS.RELIGION),
+          AsyncStorage.getItem(STORAGE_KEYS.THEME),
+          AsyncStorage.getItem(STORAGE_KEYS.CHATS),
+          AsyncStorage.getItem(STORAGE_KEYS.ACTIVE_CHAT),
+          AsyncStorage.getItem(STORAGE_KEYS.CUSTOM_PROMPT),
+        ]);
 
       set({
         nicheId: (nicheId as NicheId) ?? 'raw',
@@ -150,6 +165,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         theme: (theme as Theme) ?? 'system',
         chats: chatsRaw ? JSON.parse(chatsRaw) : [],
         activeChatId: activeChatId ?? null,
+        customPersonaPrompt: customPrompt ?? '',
       });
     } catch (e) {
       console.error('Hydration failed', e);
