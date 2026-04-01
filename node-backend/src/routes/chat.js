@@ -76,10 +76,10 @@ router.post('/', async (req, res) => {
       // Send error response
       const statusCode =
         error.message.includes('Ollama error 404') ? 404 :
-        error.message.includes('Ollama error 500') ? 503 :
-        error.message.includes('timeout') ? 504 :
-        error.message.includes('ECONNREFUSED') ? 503 :
-        500;
+          error.message.includes('Ollama error 500') ? 503 :
+            error.message.includes('timeout') ? 504 :
+              error.message.includes('ECONNREFUSED') ? 503 :
+                500;
 
       res.status(statusCode).json({
         error: error.message,
