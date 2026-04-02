@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
+  ScrollView,
 } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
@@ -11,16 +12,143 @@ import { Ionicons } from '@expo/vector-icons';
 import { ChatMessage } from '@/types';
 import { useTheme } from '@/hooks/useTheme';
 import { FONTS } from '@/constants/theme';
+import { ThemeColors } from '@/constants/theme';
 
 interface Props {
   message: ChatMessage;
   isStreaming?: boolean;
 }
 
+type RichSegment =
+  | { type: 'markdown'; content: string }
+  | { type: 'table'; header: string[]; rows: string[][] };
+
+const isTableSegment = (
+  segment: RichSegment,
+): segment is Extract<RichSegment, { type: 'table' }> => segment.type === 'table';
+
+const TABLE_SEPARATOR_RE = /^\s*\|?(?:\s*:?-{3,}:?\s*\|)+(?:\s*:?-{3,}:?\s*)\|?\s*$/;
+
+const looksLikeTableRow = (line: string): boolean => {
+  const trimmed = line.trim();
+  if (!trimmed || !trimmed.includes('|')) return false;
+  if (trimmed.startsWith('```')) return false;
+  return true;
+};
+
+const parseTableRow = (line: string): string[] => {
+  let trimmed = line.trim();
+
+  if (trimmed.startsWith('|')) {
+    trimmed = trimmed.slice(1);
+  }
+
+  if (trimmed.endsWith('|')) {
+    trimmed = trimmed.slice(0, -1);
+  }
+
+  return trimmed.split('|').map((cell) => cell.trim());
+};
+
+const padRow = (row: string[], width: number): string[] => (
+  row.length >= width ? row : [...row, ...Array(width - row.length).fill('')]
+);
+
+const parseRichContent = (content: string): RichSegment[] => {
+  const lines = content.split('\n');
+  const segments: RichSegment[] = [];
+  const markdownBuffer: string[] = [];
+  let inFence = false;
+
+  const flushMarkdown = () => {
+    if (markdownBuffer.length === 0) return;
+
+    const markdown = markdownBuffer.join('\n').trim();
+    markdownBuffer.length = 0;
+
+    if (markdown) {
+      segments.push({ type: 'markdown', content: markdown } as RichSegment);
+    }
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const nextLine = lines[i + 1] ?? '';
+
+    if (line.trim().startsWith('```')) {
+      inFence = !inFence;
+      markdownBuffer.push(line);
+      continue;
+    }
+
+    const isTableStart =
+      !inFence &&
+      looksLikeTableRow(line) &&
+      TABLE_SEPARATOR_RE.test(nextLine);
+
+    if (!isTableStart) {
+      markdownBuffer.push(line);
+      continue;
+    }
+
+    flushMarkdown();
+
+    const header = parseTableRow(line);
+    const rows: string[][] = [];
+    i += 2;
+
+    while (i < lines.length) {
+      const rowLine = lines[i];
+      if (!looksLikeTableRow(rowLine)) break;
+      rows.push(parseTableRow(rowLine));
+      i += 1;
+    }
+
+    i -= 1;
+
+    const width = Math.max(
+      header.length,
+      ...rows.map((row) => row.length),
+    );
+
+    segments.push({
+      type: 'table',
+      header: padRow(header, width),
+      rows: rows.map((row) => padRow(row, width)),
+    });
+  }
+
+  flushMarkdown();
+
+  return segments.length > 0
+    ? segments
+    : [{ type: 'markdown', content } as RichSegment];
+};
+
 export const MessageBubble: React.FC<Props> = ({ message, isStreaming }) => {
   const { colors } = useTheme();
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
+  const segments = useMemo(() => {
+    const parsed = parseRichContent(message.content);
+
+    if (!isStreaming) {
+      return parsed;
+    }
+
+    const withCursor = [...parsed];
+    const lastSegment = withCursor[withCursor.length - 1];
+
+    if (lastSegment?.type === 'markdown') {
+      withCursor[withCursor.length - 1] = {
+        ...lastSegment,
+        content: `${lastSegment.content}▋`,
+      };
+      return withCursor;
+    }
+
+    return [...withCursor, { type: 'markdown', content: '▋' } as RichSegment];
+  }, [isStreaming, message.content]);
 
   const handleCopy = async () => {
     await Clipboard.setStringAsync(message.content);
@@ -105,8 +233,12 @@ export const MessageBubble: React.FC<Props> = ({ message, isStreaming }) => {
       borderLeftWidth: 3,
       borderLeftColor: colors.accent,
       paddingLeft: 12,
+      paddingVertical: 8,
+      paddingRight: 10,
       marginVertical: 8,
-      opacity: 0.85,
+      backgroundColor: isUser ? 'rgba(255,255,255,0.08)' : colors.accentLight,
+      borderRadius: 10,
+      opacity: 0.95,
     },
     hr: {
       backgroundColor: colors.border,
@@ -151,9 +283,25 @@ export const MessageBubble: React.FC<Props> = ({ message, isStreaming }) => {
 
         {message.content.trim() !== '' ? (
           <View>
-            <Markdown style={markdownStyles} rules={renderRules}>
-              {message.content + (isStreaming ? '▋' : '')}
-            </Markdown>
+            {segments.map((segment, index) => {
+              if (!isTableSegment(segment)) {
+                return (
+                  <Markdown key={`markdown-${index}`} style={markdownStyles} rules={renderRules}>
+                    {segment.content}
+                  </Markdown>
+                );
+              }
+
+              return (
+                <RichTable
+                  key={`table-${index}`}
+                  header={segment.header}
+                  rows={segment.rows}
+                  colors={colors}
+                  isUser={isUser}
+                />
+              );
+            })}
           </View>
         ) : isStreaming ? (
           <TypingDots colors={colors} />
@@ -220,6 +368,87 @@ const CodeBlock: React.FC<{ code: string; colors: any }> = ({
         {code.trim()}
       </Text>
     </View>
+  );
+};
+
+const RichTable: React.FC<{
+  header: string[];
+  rows: string[][];
+  colors: ThemeColors;
+  isUser: boolean;
+}> = ({ header, rows, colors, isUser }) => {
+  const textColor = isUser ? colors.userBubbleText : colors.aiBubbleText;
+  const mutedTextColor = isUser ? 'rgba(255,255,255,0.75)' : colors.textMuted;
+  const borderColor = isUser ? 'rgba(255,255,255,0.16)' : colors.border;
+  const headerBackground = isUser ? 'rgba(255,255,255,0.08)' : colors.surfaceAlt;
+  const rowBackground = isUser ? 'rgba(255,255,255,0.03)' : colors.surface;
+
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={tableStyles.scrollContent}
+      style={tableStyles.scroll}
+    >
+      <View
+        style={[
+          tableStyles.table,
+          {
+            borderColor,
+            backgroundColor: rowBackground,
+          },
+        ]}
+      >
+        <View
+          style={[
+            tableStyles.row,
+            tableStyles.headerRow,
+            {
+              borderBottomColor: borderColor,
+              backgroundColor: headerBackground,
+            },
+          ]}
+        >
+          {header.map((cell, index) => (
+            <View
+              key={`header-${index}`}
+              style={[
+                tableStyles.cell,
+                index < header.length - 1 && { borderRightColor: borderColor, borderRightWidth: 1 },
+              ]}
+            >
+              <Text style={[tableStyles.headerText, { color: textColor }]} selectable>
+                {cell || ' '}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        {rows.map((row, rowIndex) => (
+          <View
+            key={`row-${rowIndex}`}
+            style={[
+              tableStyles.row,
+              rowIndex < rows.length - 1 && { borderBottomColor: borderColor, borderBottomWidth: 1 },
+            ]}
+          >
+            {row.map((cell, cellIndex) => (
+              <View
+                key={`cell-${rowIndex}-${cellIndex}`}
+                style={[
+                  tableStyles.cell,
+                  cellIndex < row.length - 1 && { borderRightColor: borderColor, borderRightWidth: 1 },
+                ]}
+              >
+                <Text style={[tableStyles.cellText, { color: cell ? textColor : mutedTextColor }]} selectable>
+                  {cell || '-'}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ))}
+      </View>
+    </ScrollView>
   );
 };
 
@@ -331,5 +560,44 @@ const codeStyles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
     padding: 12,
+  },
+});
+
+const tableStyles = StyleSheet.create({
+  scroll: {
+    marginVertical: 10,
+  },
+  scrollContent: {
+    paddingRight: 8,
+  },
+  table: {
+    minWidth: '100%',
+    borderWidth: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  headerRow: {
+    borderBottomWidth: 1,
+  },
+  cell: {
+    minWidth: 120,
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    justifyContent: 'center',
+  },
+  headerText: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontFamily: FONTS.sansSemiBold,
+  },
+  cellText: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontFamily: FONTS.sans,
   },
 });

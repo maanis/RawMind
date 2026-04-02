@@ -3,7 +3,7 @@ import { ChatMessage, NicheId, Religion } from '@/types';
 import { getSystemPrompt, OLLAMA_MODEL, CONTEXT_WINDOW } from '@/constants/niches';
 
 const BACKEND_URL = 'http://10.151.66.43:3000';
-const REQUEST_TIMEOUT = 60000;
+const REQUEST_TIMEOUT = 120000;
 const CHUNK_BUFFER_SIZE = 20;
 
 const buildContext = (messages: ChatMessage[]): { role: string; content: string }[] =>

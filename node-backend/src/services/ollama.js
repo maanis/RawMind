@@ -4,7 +4,7 @@
  */
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://localhost:11434';
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'rawmind-v2';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'dolphin-raw';
 const REQUEST_TIMEOUT = 120000;
 
 async function streamChat(messages, model = OLLAMA_MODEL, signal) {
@@ -16,7 +16,7 @@ async function streamChat(messages, model = OLLAMA_MODEL, signal) {
     stream: true,
     options: {
       temperature: 0.9,        // Higher = more raw, less filtered
-      num_predict: 1024,
+      num_predict: 2048,
       top_p: 0.92,
       repeat_penalty: 1.1,     // Reduces repetitive safety phrasing
       top_k: 40,
