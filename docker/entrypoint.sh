@@ -7,9 +7,17 @@ TARGET_MODEL="${OLLAMA_MODEL:-rawmind-v3}"
 MODELFILE_PATH="${MODELFILE_PATH:-/app/docker/Modelfile}"
 PORT="${PORT:-3000}"
 NODE_ENV="${NODE_ENV:-production}"
+OLLAMA_LOG_PATH="${OLLAMA_LOG_PATH:-/tmp/rawmind-ollama.log}"
+NGROK_LOG_PATH="${NGROK_LOG_PATH:-/tmp/rawmind-ngrok.log}"
+MODEL_CREATE_LOG_PATH="${MODEL_CREATE_LOG_PATH:-/tmp/rawmind-model-create.log}"
 
-log() {
-  printf '[startup] %s\n' "$1"
+print_line() {
+  printf '%s\n' "$1"
+}
+
+fatal() {
+  print_line "❌ $1"
+  exit 1
 }
 
 cleanup() {
@@ -31,8 +39,7 @@ wait_for_ollama() {
   until OLLAMA_HOST="${OLLAMA_BIND_HOST}" ollama list >/dev/null 2>&1; do
     attempts=$((attempts + 1))
     if [[ "${attempts}" -ge 60 ]]; then
-      log "Ollama did not become ready in time."
-      exit 1
+      fatal "Ollama failed to start."
     fi
     sleep 1
   done
@@ -43,8 +50,7 @@ wait_for_backend() {
   until curl -fsS "http://127.0.0.1:${PORT}/ready" >/dev/null 2>&1; do
     attempts=$((attempts + 1))
     if [[ "${attempts}" -ge 60 ]]; then
-      log "Backend did not become ready in time."
-      exit 1
+      fatal "Backend failed to become ready."
     fi
     sleep 1
   done
@@ -55,7 +61,7 @@ model_exists() {
 }
 
 start_ngrok() {
-  ngrok http "${PORT}" --authtoken="${NGROK_AUTHTOKEN}" --log=stdout >/tmp/ngrok.log 2>&1 &
+  ngrok http "${PORT}" --authtoken="${NGROK_AUTHTOKEN}" --log=stdout >"${NGROK_LOG_PATH}" 2>&1 &
   ngrok_pid=$!
 
   local attempts=0
@@ -63,13 +69,10 @@ start_ngrok() {
   until [[ -n "${public_url}" ]]; do
     attempts=$((attempts + 1))
     if [[ "${attempts}" -ge 30 ]]; then
-      log "ngrok started but the public URL could not be determined."
       return
     fi
 
     if ! kill -0 "${ngrok_pid}" >/dev/null 2>&1; then
-      log "ngrok exited before publishing a tunnel."
-      cat /tmp/ngrok.log || true
       return
     fi
 
@@ -82,38 +85,41 @@ start_ngrok() {
     fi
   done
 
-  printf 'PUBLIC_BACKEND_URL=%s\n' "${public_url}"
+  print_line "🌍 Public URL: ${public_url}"
 }
 
 trap cleanup EXIT INT TERM
 
-log "Starting Ollama..."
-OLLAMA_HOST="${OLLAMA_BIND_HOST}" ollama serve &
+print_line "🚀 Starting RawMind..."
+OLLAMA_HOST="${OLLAMA_BIND_HOST}" ollama serve >"${OLLAMA_LOG_PATH}" 2>&1 &
 ollama_pid=$!
 
 wait_for_ollama
 
 if model_exists; then
-  log "Verified model ${TARGET_MODEL}."
+  print_line "🧠 Model ready: ${TARGET_MODEL}"
 else
-  log "Model ${TARGET_MODEL} missing. Rebuilding from ${MODELFILE_PATH}..."
-  OLLAMA_HOST="${OLLAMA_BIND_HOST}" ollama create "${TARGET_MODEL}" -f "${MODELFILE_PATH}"
+  print_line "⚙️ Creating model: ${TARGET_MODEL}"
+  if ! OLLAMA_HOST="${OLLAMA_BIND_HOST}" ollama create "${TARGET_MODEL}" -f "${MODELFILE_PATH}" >"${MODEL_CREATE_LOG_PATH}" 2>&1; then
+    fatal "Failed to create model: ${TARGET_MODEL}"
+  fi
+  print_line "✅ Model created"
 fi
 
-log "Starting backend..."
 env \
   PORT="${PORT}" \
   NODE_ENV="${NODE_ENV}" \
   OLLAMA_HOST="${OLLAMA_API_URL}" \
   OLLAMA_MODEL="${TARGET_MODEL}" \
+  RAWMIND_QUIET_STARTUP=1 \
   node /app/node-backend/src/index.js &
 backend_pid=$!
 
 wait_for_backend
-printf 'LOCAL_BACKEND_URL=http://localhost:%s\n' "${PORT}"
+print_line "🚀 Backend running at http://localhost:${PORT}"
 
 if [[ -n "${NGROK_AUTHTOKEN:-}" ]]; then
   start_ngrok
 fi
 
-wait -n "${ollama_pid}" "${backend_pid}"
+wait -n "${ollama_pid}" "${backend_pid}" || fatal "A required service stopped unexpectedly."

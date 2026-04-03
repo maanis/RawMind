@@ -11,6 +11,7 @@ const { OLLAMA_HOST, OLLAMA_MODEL, modelExists } = require('./services/ollama');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
+const QUIET_STARTUP = process.env.RAWMIND_QUIET_STARTUP === '1';
 
 // Middleware
 app.use(cors());
@@ -71,7 +72,9 @@ app.use((err, req, res, next) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Backend running on http://localhost:${PORT}`);
-  console.log(`📡 Ollama endpoint: ${process.env.OLLAMA_HOST || 'http://localhost:11434'}`);
-  console.log(`🔧 Environment: ${NODE_ENV}`);
+  if (!QUIET_STARTUP) {
+    console.log(`🚀 Backend running on http://localhost:${PORT}`);
+    console.log(`📡 Ollama endpoint: ${process.env.OLLAMA_HOST || 'http://localhost:11434'}`);
+    console.log(`🔧 Environment: ${NODE_ENV}`);
+  }
 });
