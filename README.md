@@ -1,31 +1,61 @@
-# RawMind
+# ⚡ RawMind
 
-React Native (Expo) app + Node.js backend + Ollama, now packaged for single-image Docker distribution.
+A local-first AI system powered by:
 
-## Docker Quick Start
+* 🧠 **Ollama (custom model: `rawmind-v3`)**
+* 🚀 **Node.js streaming backend (SSE)**
+* 📱 **React Native (Expo) mobile app**
 
-The default developer path is one container and one command:
+Packaged into a **single Docker image** for zero-setup usage.
+
+---
+
+# 🚀 Quick Start (Recommended)
+
+Run everything with one command:
 
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
 
-What this does:
+---
 
-- builds one Docker image containing Ollama, the backend, ngrok, and the baked `rawmind-v3` model
-- exposes the backend at `http://localhost:3000`
-- starts ngrok automatically only if `NGROK_AUTHTOKEN` is set
-- prints `LOCAL_BACKEND_URL=...` and, when enabled, `PUBLIC_BACKEND_URL=...`
+## ✅ What happens automatically
 
-Notes:
+When you run the container:
 
-- the first build is large because the image includes `dolphin-llama3:8b` plus your custom model
-- runtime startup should not need to pull or create the model again unless the model store is damaged
+* 🧠 Ollama starts internally
 
-## Environment
+* ⚙️ Model `rawmind-v3` is already available (prebuilt)
 
-Use `.env` for optional runtime values:
+* 🚀 Backend starts on:
+
+  ```txt
+  http://localhost:3000
+  ```
+
+* 🌍 If `NGROK_AUTHTOKEN` is set:
+
+  * ngrok starts automatically
+  * Public URL is generated and printed
+
+---
+
+## 🖥️ Expected Logs
+
+```txt
+🚀 Starting RawMind...
+🧠 Model ready: rawmind-v3
+🚀 Backend running at http://localhost:3000
+🌍 Public URL: https://xxxxx.ngrok-free.app
+```
+
+---
+
+# 🔐 Environment Configuration
+
+Create a `.env` file:
 
 ```bash
 PORT=3000
@@ -33,36 +63,111 @@ NGROK_AUTHTOKEN=
 BRAVE_API_KEY=
 ```
 
-## Mobile App Backend Switching
+---
 
-The app now defaults to:
+## 🌍 Ngrok (Optional)
+
+If you want remote access:
+
+```bash
+NGROK_AUTHTOKEN=your_token_here
+```
+
+Then restart:
+
+```bash
+docker compose up
+```
+
+👉 You’ll get a public backend URL automatically.
+
+---
+
+# 📱 Mobile App Integration
+
+By default, the app connects to:
 
 ```txt
 http://localhost:3000
 ```
 
-You can change the backend from the sidebar:
+---
 
-- leave it on localhost for same-device development
-- paste a LAN URL for another machine on your network
-- paste the printed ngrok URL when you want remote access
+## 🔄 Switching Backend (Inside App)
 
-The selected custom URL is persisted in AsyncStorage until you reset it back to localhost.
+You can change backend from the sidebar:
 
-## Runtime Flow
+* ✅ **Localhost** → same device
+* 🌐 **LAN IP** → another machine on same network
+* 🌍 **Ngrok URL** → remote access
 
-When the container starts:
+Example:
 
-1. Ollama starts inside the container.
-2. The bootstrap script verifies `rawmind-v3`.
-3. If the model is unexpectedly missing, it recreates it from `docker/Modelfile`.
-4. The Node backend starts and waits until `/ready` passes.
-5. The script prints the local backend URL.
-6. If `NGROK_AUTHTOKEN` exists, ngrok starts automatically and prints the public URL.
+```txt
+http://192.168.1.10:3000
+https://abc123.ngrok-free.app
+```
 
-## Manual Local Development
+---
 
-If you still want to run things outside Docker:
+## 💾 Persistence
+
+* Selected backend URL is saved using AsyncStorage
+* Remains until manually changed
+
+---
+
+# ⚙️ Runtime Flow (Inside Docker)
+
+When container starts:
+
+1. Ollama launches (silent mode)
+2. System checks for model `rawmind-v3`
+3. If missing → recreates using `docker/Modelfile`
+4. Backend starts and waits until `/ready`
+5. Local backend URL is printed
+6. Ngrok starts automatically (if token exists)
+7. Public URL is printed
+
+---
+
+# 🧠 Model Details
+
+* Base model: `dolphin-llama3:8b`
+* Custom model: `rawmind-v3`
+* Built using:
+
+```txt
+docker/Modelfile
+```
+
+👉 Model is baked into Docker image (no runtime download required)
+
+---
+
+# ⚠️ Important Notes
+
+* First build is **large (~5–10GB)** due to model inclusion
+* Requires:
+
+  * 8GB RAM minimum (recommended)
+* CPU works, but GPU improves performance
+
+---
+
+# 🧪 Health Check
+
+Test backend:
+
+```bash
+curl http://localhost:3000/health
+```
+
+---
+
+# 🧑‍💻 Manual Development (Optional)
+
+Run without Docker:
 
 ```bash
 # Ollama
@@ -79,16 +184,41 @@ cd ..
 pnpm exec expo start
 ```
 
-## Project Structure
+---
+
+# 📦 Project Structure
 
 ```txt
 docker/
   Modelfile
   build-model.sh
   entrypoint.sh
+
 node-backend/
   src/
+
 services/
 store/
 components/
 ```
+
+---
+
+# 🎯 Goal
+
+RawMind is designed to be:
+
+* ⚡ Zero setup
+* 🧠 Fully local-first
+* 🌍 Optional remote access
+* 🔥 Clean developer experience
+
+---
+
+# 🚀 Next Steps
+
+* Connect your mobile app via LAN or ngrok
+* Share Docker image with your team
+* Extend with offline/mobile inference (future)
+
+---
