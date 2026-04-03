@@ -1,23 +1,97 @@
 /**
- * Chat Route - Handles streaming chat requests
- * Receives messages, streams from Ollama, sends to client
+ * Chat Route — unified SSE pipeline for direct and search-grounded responses.
  */
 
 const express = require('express');
-const { streamChat, parseOllamaStream } = require('../services/ollama');
+const {
+  streamChat,
+  parseOllamaStream,
+  injectRuntimeContext,
+} = require('../services/ollama');
+const { detectIntent } = require('../services/intent');
+const { searchWeb, formatSearchContext } = require('../services/search');
 
 const router = express.Router();
+const VALID_MODES = new Set(['fast', 'thinking']);
 
-/**
- * POST /chat
- * Stream chat responses from Ollama
- *
- * Request body:
- * {
- *   "messages": [{ "role": "user", "content": "..." }],
- *   "model": "dolphin-raw" (optional)
- * }
- */
+function sendSSE(res, data) {
+  if (res.writableEnded) return;
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+  if (typeof res.flush === 'function') {
+    res.flush();
+  }
+}
+
+function setupSSEHeaders(res) {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+}
+
+async function streamAssistantResponse(res, messages, model, abortSignal) {
+  const ollamaStream = await streamChat(messages, model, abortSignal);
+
+  for await (const token of parseOllamaStream(ollamaStream, abortSignal)) {
+    if (abortSignal?.aborted || res.writableEnded) break;
+    sendSSE(res, { type: 'token', content: token });
+  }
+}
+
+async function runDirectPipeline({
+  res,
+  messages,
+  model,
+  abortSignal,
+  now,
+  userLocation,
+}) {
+  const groundedMessages = injectRuntimeContext(messages, { now, userLocation });
+
+  sendSSE(res, { type: 'status', message: '🧠 Generating response...' });
+  await streamAssistantResponse(res, groundedMessages, model, abortSignal);
+}
+
+async function runSearchPipeline({
+  res,
+  messages,
+  model,
+  query,
+  abortSignal,
+  now,
+  userLocation,
+  actionMessage,
+}) {
+  if (actionMessage) {
+    sendSSE(res, { type: 'action', message: actionMessage });
+  }
+
+  sendSSE(res, { type: 'status', message: '🔍 Searching the web...' });
+
+  let searchResults = [];
+  try {
+    searchResults = await searchWeb(query, { now });
+  } catch (error) {
+    console.error('[Chat] Search failed:', error.message);
+  }
+
+  if (abortSignal?.aborted) return;
+
+  sendSSE(res, { type: 'status', message: '⚙️ Processing results...' });
+  const webContext = formatSearchContext(searchResults, now);
+  const groundedMessages = injectRuntimeContext(messages, {
+    now,
+    userLocation,
+    webContext,
+  });
+
+  if (abortSignal?.aborted) return;
+
+  sendSSE(res, { type: 'status', message: '🧠 Generating response...' });
+  await streamAssistantResponse(res, groundedMessages, model, abortSignal);
+}
+
 router.post('/', async (req, res) => {
   const abortController = new AbortController();
   let responseClosed = false;
@@ -31,59 +105,73 @@ router.post('/', async (req, res) => {
   res.on('close', handleClientDisconnect);
 
   try {
-    const { messages, model } = req.body;
+    const {
+      messages,
+      model,
+      nicheId = 'raw',
+      mode: requestedMode = 'fast',
+      userLocation,
+    } = req.body;
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({
-        error: 'Invalid request: messages array required',
+      return res.status(400).json({ error: 'Invalid request: messages array required' });
+    }
+
+    const mode = VALID_MODES.has(requestedMode) ? requestedMode : 'fast';
+    const now = new Date();
+    const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
+    const userQuery = lastUserMessage?.content?.trim() ?? '';
+
+    setupSSEHeaders(res);
+    sendSSE(res, { type: 'status', message: '🧭 Understanding your question...' });
+
+    const intent = await detectIntent(userQuery, { nicheId, mode, now });
+    if (abortController.signal.aborted || responseClosed) return;
+
+    if (intent.needsSearch) {
+      await runSearchPipeline({
+        res,
+        messages,
+        model,
+        query: userQuery,
+        abortSignal: abortController.signal,
+        now,
+        userLocation,
+        actionMessage: intent.actionMessage,
+      });
+    } else {
+      await runDirectPipeline({
+        res,
+        messages,
+        model,
+        abortSignal: abortController.signal,
+        now,
+        userLocation,
       });
     }
 
-    // Set streaming headers
-    res.setHeader('Content-Type', 'text/plain');
-    res.setHeader('Transfer-Encoding', 'chunked');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-
-    // Start streaming from Ollama
-    const ollamaStream = await streamChat(messages, model, abortController.signal);
-
-    // Parse and forward chunks
-    for await (const chunk of parseOllamaStream(ollamaStream, abortController.signal)) {
-      if (responseClosed || abortController.signal.aborted) {
-        break;
-      }
-      res.write(chunk);
-    }
-
-    // End response
-    if (!responseClosed && !res.writableEnded) {
+    if (!res.writableEnded) {
+      sendSSE(res, { type: 'done' });
       res.end();
     }
   } catch (error) {
     if (abortController.signal.aborted) {
-      if (!res.writableEnded) {
-        res.end();
-      }
+      if (!res.writableEnded) res.end();
       return;
     }
 
-    // Handle errors gracefully
     if (res.headersSent) {
-      // If we already started streaming, we can only close the connection
-      res.end();
+      sendSSE(res, { type: 'error', message: error.message });
+      if (!res.writableEnded) res.end();
     } else {
-      // Send error response
       const statusCode =
         error.message.includes('Ollama error 404') ? 404 :
-          error.message.includes('Ollama error 500') ? 503 :
-            error.message.includes('timeout') ? 504 :
-              error.message.includes('ECONNREFUSED') ? 503 :
-                500;
+        error.message.includes('Ollama error 500') ? 503 :
+        error.message.includes('timeout') ? 504 :
+        error.message.includes('ECONNREFUSED') ? 503 :
+        500;
 
-      res.status(statusCode).json({
-        error: error.message,
-      });
+      res.status(statusCode).json({ error: error.message });
     }
   } finally {
     req.off('aborted', handleClientDisconnect);

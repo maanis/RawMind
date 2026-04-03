@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Pressable,
 } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
@@ -17,6 +18,13 @@ import { ThemeColors } from '@/constants/theme';
 interface Props {
   message: ChatMessage;
   isStreaming?: boolean;
+  actionsVisible?: boolean;
+  isPlaying?: boolean;
+  onLongPress?: () => void;
+  onDismissActions?: () => void;
+  onEdit?: (message: ChatMessage) => void;
+  onRegenerate?: (message: ChatMessage) => void;
+  onPlay?: (message: ChatMessage) => void;
 }
 
 type RichSegment =
@@ -125,10 +133,21 @@ const parseRichContent = (content: string): RichSegment[] => {
     : [{ type: 'markdown', content } as RichSegment];
 };
 
-export const MessageBubble: React.FC<Props> = ({ message, isStreaming }) => {
+export const MessageBubble: React.FC<Props> = ({
+  message,
+  isStreaming,
+  actionsVisible = false,
+  isPlaying = false,
+  onLongPress,
+  onDismissActions,
+  onEdit,
+  onRegenerate,
+  onPlay,
+}) => {
   const { colors } = useTheme();
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
+
   const segments = useMemo(() => {
     const parsed = parseRichContent(message.content);
 
@@ -153,7 +172,26 @@ export const MessageBubble: React.FC<Props> = ({ message, isStreaming }) => {
   const handleCopy = async () => {
     await Clipboard.setStringAsync(message.content);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), 1800);
+    if (isUser) {
+      onDismissActions?.();
+    }
+  };
+
+  const handleEdit = () => {
+    onEdit?.(message);
+    onDismissActions?.();
+  };
+
+  const handleRegenerate = () => {
+    onRegenerate?.(message);
+    if (isUser) {
+      onDismissActions?.();
+    }
+  };
+
+  const handlePlay = () => {
+    onPlay?.(message);
   };
 
   const markdownStyles = StyleSheet.create({
@@ -166,27 +204,27 @@ export const MessageBubble: React.FC<Props> = ({ message, isStreaming }) => {
     heading1: {
       fontFamily: FONTS.serifMedium,
       fontSize: 22,
-      color: isUser ? colors.userBubbleText : colors.text,
+      color: isUser ? colors.userBubbleText : colors.aiBubbleText,
       marginBottom: 8,
       marginTop: 12,
     },
     heading2: {
       fontFamily: FONTS.serifMedium,
       fontSize: 19,
-      color: isUser ? colors.userBubbleText : colors.text,
+      color: isUser ? colors.userBubbleText : colors.aiBubbleText,
       marginBottom: 6,
       marginTop: 10,
     },
     heading3: {
       fontFamily: FONTS.sansSemiBold,
       fontSize: 17,
-      color: isUser ? colors.userBubbleText : colors.text,
+      color: isUser ? colors.userBubbleText : colors.aiBubbleText,
       marginBottom: 4,
       marginTop: 8,
     },
     strong: {
       fontFamily: FONTS.sansSemiBold,
-      color: isUser ? colors.userBubbleText : colors.text,
+      color: isUser ? colors.userBubbleText : colors.aiBubbleText,
     },
     em: {
       fontFamily: FONTS.serif,
@@ -255,81 +293,130 @@ export const MessageBubble: React.FC<Props> = ({ message, isStreaming }) => {
     },
   });
 
-  // Custom code block with copy button
   const renderRules = {
-    fence: (node: any, children: any, parent: any, styles: any) => {
+    fence: (node: any) => {
       const code = node.content ?? '';
-      return (
-        <CodeBlock key={node.key} code={code} colors={colors} />
-      );
+      return <CodeBlock key={node.key} code={code} colors={colors} />;
     },
   };
+
+  const responseActionsVisible = !isUser && !isStreaming && message.content.trim() !== '';
+  const userActionsVisible = isUser && actionsVisible && !isStreaming && message.content.trim() !== '';
+
+  const actionColor = copied ? colors.success : colors.textMuted;
 
   return (
     <View
       style={[
         styles.container,
         isUser ? styles.userContainer : styles.aiContainer,
+        userActionsVisible && styles.containerWithFloatingActions,
       ]}
     >
       <View
         style={[
-          styles.bubble,
-          isUser ? styles.userBubble : styles.aiBubble,
-          isUser ? styles.userBubbleWidth : styles.aiBubbleWidth,
-          { backgroundColor: isUser ? colors.userBubble : 'transparent' },
+          styles.messageWrap,
+          isUser ? styles.userMessageWrap : styles.aiMessageWrap,
         ]}
       >
-
-        {message.content.trim() !== '' ? (
-          <View>
-            {segments.map((segment, index) => {
-              if (!isTableSegment(segment)) {
-                return (
-                  <Markdown key={`markdown-${index}`} style={markdownStyles} rules={renderRules}>
-                    {segment.content}
-                  </Markdown>
-                );
-              }
-
-              return (
-                <RichTable
-                  key={`table-${index}`}
-                  header={segment.header}
-                  rows={segment.rows}
-                  colors={colors}
-                  isUser={isUser}
-                />
-              );
-            })}
-          </View>
-        ) : isStreaming ? (
-          <TypingDots colors={colors} />
-        ) : null}
-
-        {!isUser && !isStreaming && message.content.trim() !== '' && (
-          <TouchableOpacity
-            onPress={handleCopy}
-            style={styles.copyBtn}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        <Pressable
+          onLongPress={isUser ? onLongPress : undefined}
+          delayLongPress={250}
+          onPress={userActionsVisible ? onDismissActions : undefined}
+        >
+          <View
+            style={[
+              styles.bubble,
+              isUser ? styles.userBubble : styles.aiBubble,
+              isUser ? styles.userBubbleWidth : styles.aiBubbleWidth,
+              { backgroundColor: isUser ? colors.userBubble : 'transparent' },
+            ]}
           >
-            <Ionicons
-              name={copied ? 'checkmark' : 'copy-outline'}
-              size={14}
-              color={copied ? colors.success : colors.textMuted}
-            />
-          </TouchableOpacity>
+            {message.content.trim() !== '' ? (
+              <View>
+                {segments.map((segment, index) => {
+                  if (!isTableSegment(segment)) {
+                    return (
+                      <Markdown key={`markdown-${index}`} style={markdownStyles} rules={renderRules}>
+                        {segment.content}
+                      </Markdown>
+                    );
+                  }
+
+                  return (
+                    <RichTable
+                      key={`table-${index}`}
+                      header={segment.header}
+                      rows={segment.rows}
+                      colors={colors}
+                      isUser={isUser}
+                    />
+                  );
+                })}
+              </View>
+            ) : isStreaming ? (
+              <TypingDots colors={colors} />
+            ) : null}
+          </View>
+        </Pressable>
+
+        {responseActionsVisible && (
+          <View style={styles.inlineActions}>
+            <TouchableOpacity onPress={handleCopy} style={styles.inlineActionButton} hitSlop={8}>
+              <Ionicons
+                name={copied ? 'checkmark' : 'copy-outline'}
+                size={17}
+                color={actionColor}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handlePlay} style={styles.inlineActionButton} hitSlop={8}>
+              <Ionicons
+                name={isPlaying ? 'stop-circle-outline' : 'volume-high-outline'}
+                size={17}
+                color={colors.textMuted}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleRegenerate} style={styles.inlineActionButton} hitSlop={8}>
+              <Ionicons
+                name="refresh-outline"
+                size={17}
+                color={colors.textMuted}
+              />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {userActionsVisible && (
+          <View style={styles.floatingActions}>
+            <TouchableOpacity onPress={handleCopy} style={styles.inlineActionButton} hitSlop={8}>
+              <Ionicons
+                name={copied ? 'checkmark' : 'copy-outline'}
+                size={17}
+                color={actionColor}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleEdit} style={styles.inlineActionButton} hitSlop={8}>
+              <Ionicons
+                name="create-outline"
+                size={17}
+                color={colors.textMuted}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleRegenerate} style={styles.inlineActionButton} hitSlop={8}>
+              <Ionicons
+                name="refresh-outline"
+                size={17}
+                color={colors.textMuted}
+              />
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     </View>
   );
 };
 
-// Separate code block component with copy
-const CodeBlock: React.FC<{ code: string; colors: any }> = ({
-  code,
-  colors,
-}) => {
+const CodeBlock: React.FC<{ code: string; colors: any }> = ({ code, colors }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -454,9 +541,9 @@ const RichTable: React.FC<{
 
 const TypingDots: React.FC<{ colors: any }> = ({ colors }) => (
   <View style={styles.typingRow}>
-    {[0, 1, 2].map((i) => (
+    {[0, 1, 2].map((index) => (
       <View
-        key={i}
+        key={index}
         style={[styles.dot, { backgroundColor: colors.textMuted }]}
       />
     ))}
@@ -469,26 +556,26 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     alignItems: 'flex-start',
   },
+  containerWithFloatingActions: {
+    marginBottom: 34,
+  },
   userContainer: {
     justifyContent: 'flex-end',
     paddingHorizontal: 16,
   },
   aiContainer: {
     justifyContent: 'flex-start',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
   },
-  avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-    marginTop: 2,
-    borderWidth: 1,
+  messageWrap: {
+    position: 'relative',
   },
-  avatarText: {
-    fontSize: 15,
+  userMessageWrap: {
+    maxWidth: '84%',
+    alignItems: 'stretch',
+  },
+  aiMessageWrap: {
+    flex: 1,
   },
   bubble: {
     borderRadius: 16,
@@ -497,7 +584,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   userBubbleWidth: {
-    maxWidth: '84%',
+    alignSelf: 'flex-end',
   },
   aiBubbleWidth: {
     width: '100%',
@@ -508,10 +595,32 @@ const styles = StyleSheet.create({
   aiBubble: {
     borderBottomLeftRadius: 4,
   },
-  copyBtn: {
+  inlineActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'nowrap',
     alignSelf: 'flex-start',
+    gap: 10,
     marginTop: 4,
-    padding: 2,
+    paddingHorizontal: 10,
+  },
+  floatingActions: {
+    position: 'absolute',
+    top: '100%',
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flexWrap: 'nowrap',
+    gap: 10,
+    paddingHorizontal: 0,
+    marginTop: 4,
+  },
+  inlineActionButton: {
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   typingRow: {
     flexDirection: 'row',

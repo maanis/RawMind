@@ -7,6 +7,48 @@ const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'dolphin-raw';
 const REQUEST_TIMEOUT = 120000;
 
+function buildRuntimeContextBlock({
+  now = new Date(),
+  userLocation,
+  webContext,
+} = {}) {
+  const sections = [
+    `CURRENT DATE: ${now.toUTCString()}`,
+    `USER LOCATION: ${userLocation || 'Unknown'}`,
+    '',
+    'GROUNDING RULES:',
+    '- Use CURRENT DATE when resolving relative time references like today, yesterday, tomorrow, and this week.',
+    '- If the user asks for the current date or current time, answer strictly from CURRENT DATE.',
+    '- Use WEB CONTEXT if it is available.',
+    '- If WEB CONTEXT contradicts prior knowledge, prefer WEB CONTEXT.',
+    '- If you are unsure, say you are not certain instead of guessing.',
+  ];
+
+  if (webContext) {
+    sections.push('', webContext);
+  }
+
+  return sections.join('\n');
+}
+
+function injectRuntimeContext(messages, runtimeContext = {}) {
+  const contextBlock = buildRuntimeContextBlock(runtimeContext);
+  const systemIndex = messages.findIndex((message) => message.role === 'system');
+
+  if (systemIndex === -1) {
+    return [{ role: 'system', content: contextBlock }, ...messages];
+  }
+
+  return messages.map((message, index) => {
+    if (index !== systemIndex) return message;
+
+    return {
+      ...message,
+      content: `${message.content}\n\n${contextBlock}`,
+    };
+  });
+}
+
 async function streamChat(messages, model = OLLAMA_MODEL, signal) {
   const url = `${OLLAMA_HOST}/api/chat`;
 
@@ -15,12 +57,12 @@ async function streamChat(messages, model = OLLAMA_MODEL, signal) {
     messages,
     stream: true,
     options: {
-      temperature: 0.9,        // Higher = more raw, less filtered
+      temperature: 0.7,
       num_predict: 2048,
       top_p: 0.92,
-      repeat_penalty: 1.1,     // Reduces repetitive safety phrasing
+      repeat_penalty: 1.12,
       top_k: 40,
-      stop: [],                 // No stop tokens — let it run
+      stop: [],
     },
   });
 
@@ -100,4 +142,11 @@ async function* parseOllamaStream(stream, signal) {
   }
 }
 
-module.exports = { streamChat, parseOllamaStream, OLLAMA_HOST, OLLAMA_MODEL };
+module.exports = {
+  streamChat,
+  parseOllamaStream,
+  buildRuntimeContextBlock,
+  injectRuntimeContext,
+  OLLAMA_HOST,
+  OLLAMA_MODEL,
+};

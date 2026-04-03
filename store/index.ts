@@ -1,12 +1,13 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { NicheId, Religion, Chat, ChatMessage, Theme } from '@/types';
+import { NicheId, Religion, Chat, ChatMessage, Theme, ChatMode } from '@/types';
 import { NICHES } from '@/constants/niches';
 
 const STORAGE_KEYS = {
   NICHE: '@rawmind/niche',
   RELIGION: '@rawmind/religion',
   THEME: '@rawmind/theme',
+  CHAT_MODE: '@rawmind/chat_mode',
   CHATS: '@rawmind/chats',
   ACTIVE_CHAT: '@rawmind/active_chat',
   CUSTOM_PROMPT: '@rawmind/custom_prompt',
@@ -25,12 +26,16 @@ interface AppStore {
   theme: Theme;
   setTheme: (t: Theme) => void;
 
+  chatMode: ChatMode;
+  setChatMode: (mode: ChatMode) => void;
+
   chats: Chat[];
   activeChatId: string | null;
   setActiveChat: (id: string | null) => void;
   createChat: (nicheId: NicheId, religion?: Religion, customPrompt?: string) => Chat;
   addMessage: (chatId: string, message: ChatMessage) => void;
   updateLastMessage: (chatId: string, content: string) => void;
+  setChatMessages: (chatId: string, messages: ChatMessage[]) => void;
   deleteChat: (chatId: string) => void;
   clearAllChats: () => void;
 
@@ -51,6 +56,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   nicheId: 'raw',
   religion: 'islam',
   theme: 'system',
+  chatMode: 'fast',
   chats: [],
   activeChatId: null,
   sidebarOpen: false,
@@ -76,6 +82,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setTheme: (t) => {
     set({ theme: t });
     AsyncStorage.setItem(STORAGE_KEYS.THEME, t);
+  },
+
+  setChatMode: (mode) => {
+    set({ chatMode: mode });
+    AsyncStorage.setItem(STORAGE_KEYS.CHAT_MODE, mode);
   },
 
   setSidebarOpen: (v) => set({ sidebarOpen: v }),
@@ -133,6 +144,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // Persist happens on done/error in useChat
   },
 
+  setChatMessages: (chatId, messages) => {
+    const chats = get().chats.map((chat) => {
+      if (chat.id !== chatId) return chat;
+
+      const firstUserMessage = messages.find((message) => message.role === 'user');
+      const title =
+        firstUserMessage
+          ? firstUserMessage.content.slice(0, 40) + (firstUserMessage.content.length > 40 ? '…' : '')
+          : chat.title;
+
+      return {
+        ...chat,
+        messages,
+        updatedAt: Date.now(),
+        title,
+      };
+    });
+
+    set({ chats });
+    AsyncStorage.setItem(STORAGE_KEYS.CHATS, JSON.stringify(chats));
+  },
+
   deleteChat: (chatId) => {
     const chats = get().chats.filter((c) => c.id !== chatId);
     const activeChatId = get().activeChatId === chatId ? (chats[0]?.id ?? null) : get().activeChatId;
@@ -149,11 +182,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   hydrate: async () => {
     try {
-      const [nicheId, religion, theme, chatsRaw, activeChatId, customPrompt] =
+      const [nicheId, religion, theme, chatMode, chatsRaw, activeChatId, customPrompt] =
         await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.NICHE),
           AsyncStorage.getItem(STORAGE_KEYS.RELIGION),
           AsyncStorage.getItem(STORAGE_KEYS.THEME),
+          AsyncStorage.getItem(STORAGE_KEYS.CHAT_MODE),
           AsyncStorage.getItem(STORAGE_KEYS.CHATS),
           AsyncStorage.getItem(STORAGE_KEYS.ACTIVE_CHAT),
           AsyncStorage.getItem(STORAGE_KEYS.CUSTOM_PROMPT),
@@ -163,6 +197,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         nicheId: (nicheId as NicheId) ?? 'raw',
         religion: (religion as Religion) ?? 'islam',
         theme: (theme as Theme) ?? 'system',
+        chatMode: (chatMode as ChatMode) ?? 'fast',
         chats: chatsRaw ? JSON.parse(chatsRaw) : [],
         activeChatId: activeChatId ?? null,
         customPersonaPrompt: customPrompt ?? '',

@@ -13,11 +13,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Speech from 'expo-speech';
 import { useAppStore } from '@/store';
 import { useChat } from '@/hooks/useChat';
 import { useTheme } from '@/hooks/useTheme';
 import { MessageBubble } from '@/components/MessageBubble';
 import { ChatInput } from '@/components/ChatInput';
+import { StatusBubble } from '@/components/StatusBubble';
 import { NicheBottomSheet } from '@/components/NicheBottomSheet';
 import { CustomPersonaSheet } from '@/components/CustomPersonaSheet';
 import { FONTS } from '@/constants/theme';
@@ -31,6 +33,12 @@ export const ChatScreen: React.FC = () => {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [androidKeyboardHeight, setAndroidKeyboardHeight] = useState(0);
+  const [draftText, setDraftText] = useState('');
+  const [inputFocusSignal, setInputFocusSignal] = useState(0);
+  const [activeActionMessageId, setActiveActionMessageId] = useState<string | null>(null);
+  const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+
   const {
     activeChatId,
     nicheId,
@@ -41,16 +49,22 @@ export const ChatScreen: React.FC = () => {
     setNicheBottomSheetOpen,
     customPersonaSheetOpen,
     setCustomPersonaSheetOpen,
-  } =
-    useAppStore();
+  } = useAppStore();
 
   const chatId = activeChatId || '';
 
-  const { messages, isStreaming, sendMessage, stopStreaming } = useChat(chatId);
+  const {
+    messages,
+    isStreaming,
+    statusMessage,
+    sendMessage,
+    replaceUserMessage,
+    regenerateAtMessage,
+    stopStreaming,
+  } = useChat(chatId);
 
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
   const isNearBottomRef = useRef(true);
-
   const currentNiche = NICHES.find((n) => n.id === nicheId);
 
   const scrollToBottom = useCallback((animated = true) => {
@@ -59,15 +73,21 @@ export const ChatScreen: React.FC = () => {
     });
   }, []);
 
+  // Scroll when messages update or status appears
   useEffect(() => {
-    if (messages.length > 0) {
+    if (messages.length > 0 || statusMessage) {
       isNearBottomRef.current = true;
       scrollToBottom(true);
     }
-  }, [messages.length, isStreaming, scrollToBottom]);
+  }, [messages.length, isStreaming, statusMessage, scrollToBottom]);
 
-  // When niche changes, ensure a fresh chat is opened for that niche
-  // This gives strict prompt isolation — old chat stays in history untouched
+  useEffect(() => {
+    return () => {
+      Speech.stop();
+    };
+  }, []);
+
+  // Niche switch → new isolated chat
   const prevNicheRef = React.useRef(nicheId);
   useEffect(() => {
     if (prevNicheRef.current !== nicheId) {
@@ -78,10 +98,9 @@ export const ChatScreen: React.FC = () => {
     }
   }, [nicheId]);
 
+  // Android keyboard handling
   useEffect(() => {
-    if (Platform.OS !== 'android') {
-      return;
-    }
+    if (Platform.OS !== 'android') return;
 
     const showSub = Keyboard.addListener('keyboardDidShow', (event) => {
       setAndroidKeyboardHeight(event.endCoordinates.height);
@@ -101,40 +120,97 @@ export const ChatScreen: React.FC = () => {
       const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
       const distanceFromBottom =
         contentSize.height - (contentOffset.y + layoutMeasurement.height);
-
       isNearBottomRef.current = distanceFromBottom <= AUTO_SCROLL_THRESHOLD;
     },
     []
   );
 
   const handleSend = useCallback(
-    (text: string) => {
-      if (!activeChatId) {
-        const newChat = createChat(nicheId, nicheId === 'religion' ? religion : undefined);
-        sendMessage(text, newChat.id);
+    async (text: string) => {
+      setActiveActionMessageId(null);
+      if (editingMessageId) {
+        const targetId = editingMessageId;
+        setEditingMessageId(null);
+        await replaceUserMessage(targetId, text);
         return;
       }
-      sendMessage(text);
+      if (!activeChatId) {
+        const newChat = createChat(nicheId, nicheId === 'religion' ? religion : undefined);
+        await sendMessage(text, newChat.id);
+        return;
+      }
+      await sendMessage(text);
     },
-    [activeChatId, nicheId, religion, sendMessage, createChat]
+    [activeChatId, createChat, editingMessageId, nicheId, religion, replaceUserMessage, sendMessage]
   );
+
+  const handleEditMessage = useCallback((message: ChatMessage) => {
+    setDraftText(message.content);
+    setEditingMessageId(message.id);
+    setActiveActionMessageId(null);
+    setInputFocusSignal((value) => value + 1);
+  }, []);
+
+  const handlePlayMessage = useCallback((message: ChatMessage) => {
+    const plainText = message.content
+      .replace(/```[\s\S]*?```/g, ' code block ')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/[#>*_\-\[\]\(\)]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!plainText) return;
+
+    if (playingMessageId === message.id) {
+      Speech.stop();
+      setPlayingMessageId(null);
+      return;
+    }
+
+    Speech.stop();
+    setPlayingMessageId(message.id);
+    Speech.speak(plainText, {
+      onDone: () => setPlayingMessageId(null),
+      onStopped: () => setPlayingMessageId(null),
+      onError: () => setPlayingMessageId(null),
+    });
+  }, [playingMessageId]);
+
+  const handleRegenerate = useCallback(async (message: ChatMessage) => {
+    setActiveActionMessageId(null);
+    await regenerateAtMessage(message.id);
+  }, [regenerateAtMessage]);
 
   const renderItem = useCallback(
     ({ item, index }: { item: ChatMessage; index: number }) => {
       if (!item) return null;
-
       return (
         <MessageBubble
           message={item}
+          actionsVisible={activeActionMessageId === item.id}
           isStreaming={
             isStreaming &&
             index === messages.length - 1 &&
             item.role === 'assistant'
           }
+          isPlaying={playingMessageId === item.id}
+          onLongPress={item.role === 'user' ? () => setActiveActionMessageId(item.id) : undefined}
+          onDismissActions={() => setActiveActionMessageId((current) => current === item.id ? null : current)}
+          onEdit={item.role === 'user' ? handleEditMessage : undefined}
+          onPlay={item.role === 'assistant' ? handlePlayMessage : undefined}
+          onRegenerate={handleRegenerate}
         />
       );
     },
-    [isStreaming, messages.length]
+    [
+      activeActionMessageId,
+      handleEditMessage,
+      handlePlayMessage,
+      handleRegenerate,
+      isStreaming,
+      messages.length,
+      playingMessageId,
+    ]
   );
 
   const keyExtractor = useCallback((item: ChatMessage) => item.id, []);
@@ -163,6 +239,12 @@ export const ChatScreen: React.FC = () => {
       <FlatList
         ref={flatListRef}
         data={messages}
+        extraData={{
+          statusMessage,
+          isStreaming,
+          activeActionMessageId,
+          playingMessageId,
+        }}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
         contentContainerStyle={[
@@ -170,12 +252,21 @@ export const ChatScreen: React.FC = () => {
           messages.length === 0 && styles.messageListEmpty,
         ]}
         ListEmptyComponent={EmptyState}
+        ListFooterComponent={
+          // Status bubble appears below last message, inside the scroll view
+          statusMessage ? (
+            <StatusBubble message={statusMessage} />
+          ) : null
+        }
         onContentSizeChange={() => {
-          if (messages.length > 0 && isNearBottomRef.current) {
+          if ((messages.length > 0 || statusMessage) && isNearBottomRef.current) {
             scrollToBottom(!isStreaming);
           }
         }}
         onScroll={handleScroll}
+        onScrollBeginDrag={() => {
+          setActiveActionMessageId(null);
+        }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
@@ -197,6 +288,9 @@ export const ChatScreen: React.FC = () => {
           onSend={handleSend}
           isStreaming={isStreaming}
           onStop={stopStreaming}
+          value={draftText}
+          onChangeText={setDraftText}
+          focusSignal={inputFocusSignal}
         />
       </View>
     </>
@@ -272,12 +366,8 @@ export const ChatScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-  },
+  root: { flex: 1 },
+  content: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -305,7 +395,7 @@ const styles = StyleSheet.create({
   messageList: {
     flexGrow: 1,
     paddingTop: 16,
-    paddingBottom: 20,
+    paddingBottom: 8,
   },
   messageListEmpty: {
     flex: 1,
@@ -321,17 +411,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     gap: 8,
   },
-  emptyIcon: {
-    fontSize: 50,
-    marginBottom: 8,
-  },
-  emptyPersona: {
-    fontSize: 24,
-    letterSpacing: -0.3,
-  },
-  emptyDesc: {
-    fontSize: 16,
-    textAlign: 'center',
-    lineHeight: 24,
-  },
+  emptyIcon: { fontSize: 50, marginBottom: 8 },
+  emptyPersona: { fontSize: 24, letterSpacing: -0.3 },
+  emptyDesc: { fontSize: 16, textAlign: 'center', lineHeight: 24 },
 });

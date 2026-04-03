@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useRef } from 'react';
 import {
   TextInput,
   TouchableOpacity,
@@ -16,23 +16,40 @@ interface Props {
   onSend: (text: string) => void;
   isStreaming: boolean;
   onStop: () => void;
+  value: string;
+  onChangeText: (text: string) => void;
+  focusSignal?: number;
 }
 
-export const ChatInput: React.FC<Props> = ({ onSend, isStreaming, onStop }) => {
+export const ChatInput: React.FC<Props> = ({
+  onSend,
+  isStreaming,
+  onStop,
+  value,
+  onChangeText,
+  focusSignal = 0,
+}) => {
   const { colors } = useTheme();
-  const [text, setText] = useState('');
-  const [modeIndex, setModeIndex] = useState(0);
   const inputRef = useRef<TextInput>(null);
-  const composerModes = ['Auto', 'Focused', 'Quick'];
-  const setNicheBottomSheetOpen = useAppStore((s) => s.setNicheBottomSheetOpen);
+  const { chatMode, setChatMode, setNicheBottomSheetOpen } = useAppStore((state) => ({
+    chatMode: state.chatMode,
+    setChatMode: state.setChatMode,
+    setNicheBottomSheetOpen: state.setNicheBottomSheetOpen,
+  }));
+
+  React.useEffect(() => {
+    if (focusSignal > 0) {
+      inputRef.current?.focus();
+    }
+  }, [focusSignal]);
 
   const handleSend = () => {
-    if (!text.trim() || isStreaming) return;
-    onSend(text.trim());
-    setText('');
+    if (!value.trim() || isStreaming) return;
+    onSend(value.trim());
+    onChangeText('');
   };
 
-  const canSend = text.trim().length > 0 && !isStreaming;
+  const canSend = value.trim().length > 0 && !isStreaming;
 
   return (
     <View
@@ -47,8 +64,8 @@ export const ChatInput: React.FC<Props> = ({ onSend, isStreaming, onStop }) => {
       <View style={styles.topRow}>
         <TextInput
           ref={inputRef}
-          value={text}
-          onChangeText={setText}
+          value={value}
+          onChangeText={onChangeText}
           placeholder="Ask anything privately..."
           placeholderTextColor={colors.textMuted}
           multiline
@@ -121,6 +138,40 @@ export const ChatInput: React.FC<Props> = ({ onSend, isStreaming, onStop }) => {
 
 
         </View>
+
+        <View style={[styles.modeSwitch, { backgroundColor: colors.surfaceAlt, borderColor: colors.inputBorder }]}>
+          {([
+            { id: 'fast', label: '⚡ Fast' },
+            { id: 'thinking', label: '🧠 Thinking' },
+          ] as const).map((option) => {
+            const selected = chatMode === option.id;
+
+            return (
+              <TouchableOpacity
+                key={option.id}
+                onPress={() => setChatMode(option.id)}
+                style={[
+                  styles.modeBtn,
+                  {
+                    backgroundColor: selected ? colors.accent : 'transparent',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.modeText,
+                    {
+                      color: selected ? colors.background : colors.textSecondary,
+                      fontFamily: selected ? FONTS.sansSemiBold : FONTS.sansMedium,
+                    },
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
     </View>
   );
@@ -144,6 +195,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 10,
   },
   actionGroup: {
     flexDirection: 'row',
@@ -179,11 +231,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
   },
+  modeSwitch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
   modeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    borderRadius: 11,
+    justifyContent: 'center',
+    borderRadius: 9,
     paddingHorizontal: 10,
     height: 30,
   },

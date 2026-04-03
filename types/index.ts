@@ -33,6 +33,9 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+  // Web search metadata (only on assistant messages)
+  isWebSearch?: boolean;
+  webSearchStatus?: string; // last status seen during pipeline
 }
 
 export interface Chat {
@@ -47,3 +50,12 @@ export interface Chat {
 }
 
 export type Theme = 'light' | 'dark' | 'system';
+export type ChatMode = 'fast' | 'thinking';
+
+// SSE event types from backend
+export type SSEEvent =
+  | { type: 'action'; message: string }
+  | { type: 'status'; message: string }
+  | { type: 'token'; content: string }
+  | { type: 'done' }
+  | { type: 'error'; message: string };

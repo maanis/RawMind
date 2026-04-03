@@ -121,7 +121,7 @@ export const NICHES: Niche[] = [
     persona: 'Unleashed',
     icon: '⚡',
     description: 'No restrictions. Ask anything.',
-    color: '#F97316',
+    color: '#D91E28',
   },
   {
     id: 'custom',
