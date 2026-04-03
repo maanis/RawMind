@@ -14,7 +14,7 @@ import { useAppStore } from '@/store';
 import { useTheme } from '@/hooks/useTheme';
 import { FONTS } from '@/constants/theme';
 import { NICHES } from '@/constants/niches';
-import { DEFAULT_BACKEND_URL } from '@/services/ai';
+import { getDefaultBackendUrl } from '@/services/ai';
 
 const SIDEBAR_WIDTH = '78%';
 
@@ -52,7 +52,7 @@ export const Sidebar: React.FC = () => {
   };
 
   const effectiveBackendUrl =
-    backendUrlMode === 'custom' && customBackendUrl ? customBackendUrl : DEFAULT_BACKEND_URL;
+    backendUrlMode === 'custom' && customBackendUrl ? customBackendUrl : getDefaultBackendUrl();
 
   const handleSaveBackendUrl = () => {
     const normalizedUrl = backendUrlDraft.trim().replace(/\/+$/, '');
@@ -220,7 +220,7 @@ export const Sidebar: React.FC = () => {
             {effectiveBackendUrl}
           </Text>
           <Text style={[styles.backendHint, { color: colors.textMuted, fontFamily: FONTS.sans }]}>
-            Use localhost by default, or paste a LAN/ngrok URL for Docker or remote access.
+            Uses your Expo host IP by default. Paste a LAN/ngrok URL for Docker or remote access.
           </Text>
           <TextInput
             value={backendUrlDraft}
@@ -260,7 +260,7 @@ export const Sidebar: React.FC = () => {
                   },
                 ]}
               >
-                Use Localhost
+                Use Default
               </Text>
             </TouchableOpacity>
             <TouchableOpacity

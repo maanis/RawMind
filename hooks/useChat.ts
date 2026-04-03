@@ -101,14 +101,10 @@ export const useChat = (chatId: string) => {
     abortRef.current = new AbortController();
 
     let accumulated = '';
-    let actionVisible = false;
 
     const callbacks: StreamCallbacks = {
       onAction: (message) => {
-        actionVisible = true;
         setActionMessage(message);
-        accumulated = message;
-        updateLastMessage(effectiveChatId, accumulated);
       },
 
       onStatus: (message) => {
@@ -116,12 +112,6 @@ export const useChat = (chatId: string) => {
       },
 
       onChunk: (chunk) => {
-        if (actionVisible) {
-          actionVisible = false;
-          setActionMessage(null);
-          accumulated = '';
-        }
-
         accumulated += chunk;
         updateLastMessage(effectiveChatId, accumulated);
       },

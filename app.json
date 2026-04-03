@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "RawMind",
+    "slug": "rawmind",
+    "scheme": "rawmind",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f0f0f"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.rawmind.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f0f0f"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [],
+    "jsEngine": "hermes",
+    "extra": {
+      "eas": {
+        "projectId": "3fac400a-5ed9-42a7-ad9d-0fee880dac89"
+      }
+    }
+  }
+}

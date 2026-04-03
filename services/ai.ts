@@ -1,14 +1,41 @@
 import { fetch as rnFetch } from 'react-native-fetch-api';
+import Constants from 'expo-constants';
 import { ChatMessage, ChatMode, NicheId, Religion, SSEEvent } from '@/types';
 import { getSystemPrompt, CONTEXT_WINDOW } from '@/constants/niches';
 import { useAppStore } from '@/store';
 
-export const DEFAULT_BACKEND_URL = 'http://localhost:3000';
 const REQUEST_TIMEOUT = 120000;
 const CHUNK_BUFFER_SIZE = 20;
 
 function normalizeBackendUrl(url: string): string {
   return url.trim().replace(/\/+$/, '');
+}
+
+function getExpoHostIp(): string | null {
+  const candidates = [
+    Constants.expoConfig?.hostUri,
+    (Constants as any).manifest2?.extra?.expoClient?.hostUri,
+    (Constants as any).manifest?.debuggerHost,
+    (Constants as any).manifest?.hostUri,
+    (Constants as any).expoGoConfig?.debuggerHost,
+  ].filter(Boolean) as string[];
+
+  for (const candidate of candidates) {
+    const cleaned = candidate.replace(/^https?:\/\//, '').replace(/^exp:\/\//, '');
+    const hostPart = cleaned.split(':')[0]?.trim();
+    if (hostPart) return hostPart;
+  }
+
+  return null;
+}
+
+export function getDefaultBackendUrl(): string {
+  const hostIp = getExpoHostIp();
+  if (hostIp) {
+    return `http://${hostIp}:3000`;
+  }
+
+  return 'http://localhost:3000';
 }
 
 export function getBackendUrl(): string {
@@ -19,7 +46,7 @@ export function getBackendUrl(): string {
     return normalizedCustomUrl;
   }
 
-  return DEFAULT_BACKEND_URL;
+  return getDefaultBackendUrl();
 }
 
 const buildContext = (messages: ChatMessage[]): { role: string; content: string }[] =>

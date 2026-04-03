@@ -20,6 +20,8 @@ interface Props {
   isStreaming?: boolean;
   actionsVisible?: boolean;
   isPlaying?: boolean;
+  leadText?: string | null;
+  statusText?: string | null;
   onLongPress?: () => void;
   onDismissActions?: () => void;
   onEdit?: (message: ChatMessage) => void;
@@ -138,6 +140,8 @@ export const MessageBubble: React.FC<Props> = ({
   isStreaming,
   actionsVisible = false,
   isPlaying = false,
+  leadText = null,
+  statusText = null,
   onLongPress,
   onDismissActions,
   onEdit,
@@ -302,6 +306,7 @@ export const MessageBubble: React.FC<Props> = ({
 
   const responseActionsVisible = !isUser && !isStreaming && message.content.trim() !== '';
   const userActionsVisible = isUser && actionsVisible && !isStreaming && message.content.trim() !== '';
+  const showPipelinePrelude = !isUser && (Boolean(leadText) || Boolean(statusText));
 
   const actionColor = copied ? colors.success : colors.textMuted;
 
@@ -332,6 +337,31 @@ export const MessageBubble: React.FC<Props> = ({
               { backgroundColor: isUser ? colors.userBubble : 'transparent' },
             ]}
           >
+            {showPipelinePrelude ? (
+              <View style={styles.pipelinePrelude}>
+                {leadText ? (
+                  <Text
+                    style={[
+                      styles.pipelineLead,
+                      { color: colors.textSecondary, fontFamily: FONTS.sansSemiBold },
+                    ]}
+                  >
+                    {leadText}
+                  </Text>
+                ) : null}
+                {statusText ? (
+                  <Text
+                    style={[
+                      styles.pipelineStatus,
+                      { color: colors.textMuted, fontFamily: FONTS.sans },
+                    ]}
+                  >
+                    {statusText}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+
             {message.content.trim() !== '' ? (
               <View>
                 {segments.map((segment, index) => {
@@ -369,13 +399,15 @@ export const MessageBubble: React.FC<Props> = ({
                 color={actionColor}
               />
             </TouchableOpacity>
-            <TouchableOpacity onPress={handlePlay} style={styles.inlineActionButton} hitSlop={8}>
-              <Ionicons
-                name={isPlaying ? 'stop-circle-outline' : 'volume-high-outline'}
-                size={17}
-                color={colors.textMuted}
-              />
-            </TouchableOpacity>
+            {onPlay ? (
+              <TouchableOpacity onPress={handlePlay} style={styles.inlineActionButton} hitSlop={8}>
+                <Ionicons
+                  name={isPlaying ? 'stop-circle-outline' : 'volume-high-outline'}
+                  size={17}
+                  color={colors.textMuted}
+                />
+              </TouchableOpacity>
+            ) : null}
             <TouchableOpacity onPress={handleRegenerate} style={styles.inlineActionButton} hitSlop={8}>
               <Ionicons
                 name="refresh-outline"
@@ -582,6 +614,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     paddingBottom: 8,
+  },
+  pipelinePrelude: {
+    gap: 4,
+    marginBottom: 8,
+  },
+  pipelineLead: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  pipelineStatus: {
+    fontSize: 14,
+    lineHeight: 20,
   },
   userBubbleWidth: {
     alignSelf: 'flex-end',

@@ -19,7 +19,6 @@ import { useChat } from '@/hooks/useChat';
 import { useTheme } from '@/hooks/useTheme';
 import { MessageBubble } from '@/components/MessageBubble';
 import { ChatInput } from '@/components/ChatInput';
-import { StatusBubble } from '@/components/StatusBubble';
 import { NicheBottomSheet } from '@/components/NicheBottomSheet';
 import { CustomPersonaSheet } from '@/components/CustomPersonaSheet';
 import { FONTS } from '@/constants/theme';
@@ -57,6 +56,7 @@ export const ChatScreen: React.FC = () => {
     messages,
     isStreaming,
     statusMessage,
+    actionMessage,
     sendMessage,
     replaceUserMessage,
     regenerateAtMessage,
@@ -75,11 +75,11 @@ export const ChatScreen: React.FC = () => {
 
   // Scroll when messages update or status appears
   useEffect(() => {
-    if (messages.length > 0 || statusMessage) {
+    if (messages.length > 0 || actionMessage || statusMessage) {
       isNearBottomRef.current = true;
       scrollToBottom(true);
     }
-  }, [messages.length, isStreaming, statusMessage, scrollToBottom]);
+  }, [actionMessage, messages.length, isStreaming, statusMessage, scrollToBottom]);
 
   useEffect(() => {
     return () => {
@@ -184,16 +184,17 @@ export const ChatScreen: React.FC = () => {
   const renderItem = useCallback(
     ({ item, index }: { item: ChatMessage; index: number }) => {
       if (!item) return null;
+      const isActiveAssistantMessage =
+        index === messages.length - 1 && item.role === 'assistant';
+
       return (
         <MessageBubble
           message={item}
           actionsVisible={activeActionMessageId === item.id}
-          isStreaming={
-            isStreaming &&
-            index === messages.length - 1 &&
-            item.role === 'assistant'
-          }
+          isStreaming={isStreaming && isActiveAssistantMessage}
           isPlaying={playingMessageId === item.id}
+          leadText={isActiveAssistantMessage ? actionMessage : null}
+          statusText={isActiveAssistantMessage ? statusMessage : null}
           onLongPress={item.role === 'user' ? () => setActiveActionMessageId(item.id) : undefined}
           onDismissActions={() => setActiveActionMessageId((current) => current === item.id ? null : current)}
           onEdit={item.role === 'user' ? handleEditMessage : undefined}
@@ -210,6 +211,8 @@ export const ChatScreen: React.FC = () => {
       isStreaming,
       messages.length,
       playingMessageId,
+      actionMessage,
+      statusMessage,
     ]
   );
 
@@ -240,6 +243,7 @@ export const ChatScreen: React.FC = () => {
         ref={flatListRef}
         data={messages}
         extraData={{
+          actionMessage,
           statusMessage,
           isStreaming,
           activeActionMessageId,
@@ -252,14 +256,9 @@ export const ChatScreen: React.FC = () => {
           messages.length === 0 && styles.messageListEmpty,
         ]}
         ListEmptyComponent={EmptyState}
-        ListFooterComponent={
-          // Status bubble appears below last message, inside the scroll view
-          statusMessage ? (
-            <StatusBubble message={statusMessage} />
-          ) : null
-        }
+        ListFooterComponent={null}
         onContentSizeChange={() => {
-          if ((messages.length > 0 || statusMessage) && isNearBottomRef.current) {
+          if ((messages.length > 0 || actionMessage || statusMessage) && isNearBottomRef.current) {
             scrollToBottom(!isStreaming);
           }
         }}
