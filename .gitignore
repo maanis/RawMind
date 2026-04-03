@@ -49,6 +49,14 @@ ios/Pods/
 *.swp
 *.swo
 
+# Root config files
+package.json
+tsconfig.json
+KEYBOARD_INPUT_FIX.md
+app.plugin.js
+app.json
+Modelfile
+
 # OS files
 .DS_Store
 Thumbs.db

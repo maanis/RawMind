@@ -4,7 +4,7 @@
  */
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://localhost:11434';
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'dolphin-raw';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'rawmind-v3';
 const REQUEST_TIMEOUT = 120000;
 
 function buildRuntimeContextBlock({

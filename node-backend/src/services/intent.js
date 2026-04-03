@@ -8,7 +8,7 @@
  */
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://localhost:11434';
-const INTENT_MODEL = process.env.OLLAMA_INTENT_MODEL || process.env.OLLAMA_MODEL || 'dolphin-raw';
+const INTENT_MODEL = process.env.OLLAMA_INTENT_MODEL || process.env.OLLAMA_MODEL || 'rawmind-v3';
 const CLASSIFIER_TIMEOUT = 4000;
 
 const OBVIOUS_SEARCH_PATTERNS = [
