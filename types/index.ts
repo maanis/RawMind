@@ -51,6 +51,7 @@ export interface Chat {
 
 export type Theme = 'light' | 'dark' | 'system';
 export type ChatMode = 'fast' | 'thinking';
+export type BackendUrlMode = 'default' | 'custom';
 
 // SSE event types from backend
 export type SSEEvent =

@@ -1,7 +1,11 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { NicheId, Religion, Chat, ChatMessage, Theme, ChatMode } from '@/types';
+import { NicheId, Religion, Chat, ChatMessage, Theme, ChatMode, BackendUrlMode } from '@/types';
 import { NICHES } from '@/constants/niches';
+
+function normalizeBackendUrl(url: string): string {
+  return url.trim().replace(/\/+$/, '');
+}
 
 const STORAGE_KEYS = {
   NICHE: '@rawmind/niche',
@@ -11,6 +15,8 @@ const STORAGE_KEYS = {
   CHATS: '@rawmind/chats',
   ACTIVE_CHAT: '@rawmind/active_chat',
   CUSTOM_PROMPT: '@rawmind/custom_prompt',
+  BACKEND_URL_MODE: '@rawmind/backend_url_mode',
+  CUSTOM_BACKEND_URL: '@rawmind/custom_backend_url',
 };
 
 interface AppStore {
@@ -28,6 +34,11 @@ interface AppStore {
 
   chatMode: ChatMode;
   setChatMode: (mode: ChatMode) => void;
+
+  backendUrlMode: BackendUrlMode;
+  customBackendUrl: string;
+  setBackendUrlMode: (mode: BackendUrlMode) => void;
+  setCustomBackendUrl: (url: string) => void;
 
   chats: Chat[];
   activeChatId: string | null;
@@ -57,6 +68,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   religion: 'islam',
   theme: 'system',
   chatMode: 'fast',
+  backendUrlMode: 'default',
+  customBackendUrl: '',
   chats: [],
   activeChatId: null,
   sidebarOpen: false,
@@ -87,6 +100,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setChatMode: (mode) => {
     set({ chatMode: mode });
     AsyncStorage.setItem(STORAGE_KEYS.CHAT_MODE, mode);
+  },
+
+  setBackendUrlMode: (mode) => {
+    set({ backendUrlMode: mode });
+    AsyncStorage.setItem(STORAGE_KEYS.BACKEND_URL_MODE, mode);
+  },
+
+  setCustomBackendUrl: (url) => {
+    const normalizedUrl = normalizeBackendUrl(url);
+    set({ customBackendUrl: normalizedUrl });
+    AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_BACKEND_URL, normalizedUrl);
   },
 
   setSidebarOpen: (v) => set({ sidebarOpen: v }),
@@ -182,7 +206,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   hydrate: async () => {
     try {
-      const [nicheId, religion, theme, chatMode, chatsRaw, activeChatId, customPrompt] =
+      const [
+        nicheId,
+        religion,
+        theme,
+        chatMode,
+        chatsRaw,
+        activeChatId,
+        customPrompt,
+        backendUrlMode,
+        customBackendUrl,
+      ] =
         await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.NICHE),
           AsyncStorage.getItem(STORAGE_KEYS.RELIGION),
@@ -191,6 +225,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
           AsyncStorage.getItem(STORAGE_KEYS.CHATS),
           AsyncStorage.getItem(STORAGE_KEYS.ACTIVE_CHAT),
           AsyncStorage.getItem(STORAGE_KEYS.CUSTOM_PROMPT),
+          AsyncStorage.getItem(STORAGE_KEYS.BACKEND_URL_MODE),
+          AsyncStorage.getItem(STORAGE_KEYS.CUSTOM_BACKEND_URL),
         ]);
 
       set({
@@ -198,6 +234,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         religion: (religion as Religion) ?? 'islam',
         theme: (theme as Theme) ?? 'system',
         chatMode: (chatMode as ChatMode) ?? 'fast',
+        backendUrlMode: (backendUrlMode as BackendUrlMode) ?? 'default',
+        customBackendUrl: normalizeBackendUrl(customBackendUrl ?? ''),
         chats: chatsRaw ? JSON.parse(chatsRaw) : [],
         activeChatId: activeChatId ?? null,
         customPersonaPrompt: customPrompt ?? '',

@@ -7,6 +7,37 @@ const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'rawmind-v3';
 const REQUEST_TIMEOUT = 120000;
 
+function normalizeModelName(modelName = '') {
+  return modelName.replace(/:latest$/, '');
+}
+
+async function fetchOllamaTags(timeoutMs = 5000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${OLLAMA_HOST}/api/tags`, {
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ollama tags error ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data?.models ?? [];
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function modelExists(model = OLLAMA_MODEL, timeoutMs = 5000) {
+  const models = await fetchOllamaTags(timeoutMs);
+  const expectedName = normalizeModelName(model);
+
+  return models.some((entry) => normalizeModelName(entry?.name ?? '') === expectedName);
+}
+
 function buildRuntimeContextBlock({
   now = new Date(),
   userLocation,
@@ -147,6 +178,8 @@ module.exports = {
   parseOllamaStream,
   buildRuntimeContextBlock,
   injectRuntimeContext,
+  fetchOllamaTags,
+  modelExists,
   OLLAMA_HOST,
   OLLAMA_MODEL,
 };

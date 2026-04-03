@@ -1,0 +1,13 @@
+services:
+  rawmind:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rawmind:local
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: ${PORT:-3000}
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+    restart: unless-stopped

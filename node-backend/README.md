@@ -50,7 +50,7 @@ Create a `.env` file (or use defaults):
 ```bash
 PORT=3000
 OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=dolphin-raw
+OLLAMA_MODEL=rawmind-v3
 NODE_ENV=development
 ```
 
@@ -92,7 +92,15 @@ Response:
 { "status": "ok", "timestamp": "2026-03-31T12:00:00.000Z" }
 ```
 
-### 2. Stream Chat
+### 2. Readiness Check
+
+```bash
+GET /ready
+```
+
+Returns `200` only when Ollama is reachable and `rawmind-v3` is available.
+
+### 3. Stream Chat
 
 ```bash
 POST /chat
@@ -103,7 +111,7 @@ Content-Type: application/json
     { "role": "system", "content": "You are a helpful assistant" },
     { "role": "user", "content": "What is 2+2?" }
   ],
-  "model": "dolphin-raw"
+  "model": "rawmind-v3"
 }
 ```
 
@@ -155,7 +163,7 @@ curl -X POST http://localhost:3000/chat \
 Update your app's `ai.ts` service to use this backend:
 
 ```typescript
-const BACKEND_URL = 'http://10.151.66.43:3000'; // Your machine IP
+const BACKEND_URL = 'http://localhost:3000';
 
 export const streamChat = async (
   messages,
@@ -272,7 +280,7 @@ node-backend/
 |----------|---------|-------------|
 | `PORT` | 3000 | Server port |
 | `OLLAMA_HOST` | http://localhost:11434 | Ollama API URL |
-| `OLLAMA_MODEL` | dolphin-raw | Default LLM model |
+| `OLLAMA_MODEL` | rawmind-v3 | Default LLM model |
 | `NODE_ENV` | development | Environment mode |
 
 ---

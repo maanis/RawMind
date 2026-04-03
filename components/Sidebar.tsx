@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Pressable,
+  TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +14,7 @@ import { useAppStore } from '@/store';
 import { useTheme } from '@/hooks/useTheme';
 import { FONTS } from '@/constants/theme';
 import { NICHES } from '@/constants/niches';
+import { DEFAULT_BACKEND_URL } from '@/services/ai';
 
 const SIDEBAR_WIDTH = '78%';
 
@@ -32,12 +34,31 @@ export const Sidebar: React.FC = () => {
     createChat,
     deleteChat,
     clearAllChats,
+    backendUrlMode,
+    customBackendUrl,
+    setBackendUrlMode,
+    setCustomBackendUrl,
   } = useAppStore();
+  const [backendUrlDraft, setBackendUrlDraft] = useState(customBackendUrl);
+
+  useEffect(() => {
+    setBackendUrlDraft(customBackendUrl);
+  }, [customBackendUrl, sidebarOpen]);
 
   const handleNewChat = () => {
     const newChat = createChat(nicheId, nicheId === 'religion' ? religion : undefined);
     setActiveChat(newChat.id);
     setSidebarOpen(false);
+  };
+
+  const effectiveBackendUrl =
+    backendUrlMode === 'custom' && customBackendUrl ? customBackendUrl : DEFAULT_BACKEND_URL;
+
+  const handleSaveBackendUrl = () => {
+    const normalizedUrl = backendUrlDraft.trim().replace(/\/+$/, '');
+    if (!normalizedUrl) return;
+    setCustomBackendUrl(normalizedUrl);
+    setBackendUrlMode('custom');
   };
 
   if (!sidebarOpen) return null;
@@ -190,6 +211,81 @@ export const Sidebar: React.FC = () => {
               </TouchableOpacity>
             ))}
           </View>
+
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <Text style={[styles.sectionLabel, { color: colors.textMuted, fontFamily: FONTS.sansSemiBold }]}>
+            BACKEND
+          </Text>
+          <Text style={[styles.backendValue, { color: colors.textSecondary, fontFamily: FONTS.sans }]}>
+            {effectiveBackendUrl}
+          </Text>
+          <Text style={[styles.backendHint, { color: colors.textMuted, fontFamily: FONTS.sans }]}>
+            Use localhost by default, or paste a LAN/ngrok URL for Docker or remote access.
+          </Text>
+          <TextInput
+            value={backendUrlDraft}
+            onChangeText={setBackendUrlDraft}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            placeholder="https://example.ngrok.app"
+            placeholderTextColor={colors.textMuted}
+            style={[
+              styles.backendInput,
+              {
+                color: colors.text,
+                borderColor: colors.border,
+                backgroundColor: colors.surface,
+                fontFamily: FONTS.sans,
+              },
+            ]}
+          />
+          <View style={styles.backendActions}>
+            <TouchableOpacity
+              onPress={() => setBackendUrlMode('default')}
+              style={[
+                styles.backendActionBtn,
+                {
+                  backgroundColor: backendUrlMode === 'default' ? colors.text : colors.surfaceAlt,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.backendActionText,
+                  {
+                    color: backendUrlMode === 'default' ? colors.background : colors.textSecondary,
+                    fontFamily: FONTS.sansMedium,
+                  },
+                ]}
+              >
+                Use Localhost
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleSaveBackendUrl}
+              style={[
+                styles.backendActionBtn,
+                {
+                  backgroundColor: colors.accent,
+                  borderColor: colors.accent,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.backendActionText,
+                  {
+                    color: colors.background,
+                    fontFamily: FONTS.sansMedium,
+                  },
+                ]}
+              >
+                Save Custom URL
+              </Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </View>
     </View>
@@ -284,6 +380,37 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginBottom: 20,
+  },
+  backendValue: {
+    fontSize: 13,
+    marginBottom: 6,
+  },
+  backendHint: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 10,
+  },
+  backendInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    marginBottom: 10,
+  },
+  backendActions: {
+    gap: 8,
+    marginBottom: 20,
+  },
+  backendActionBtn: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  backendActionText: {
+    fontSize: 13,
   },
   themeBtn: {
     flex: 1,

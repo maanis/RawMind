@@ -280,6 +280,6 @@ export const getNicheById = (id: NicheId): Niche =>
   NICHES.find((n) => n.id === id) ?? NICHES[NICHES.length - 1];
 
 // ─── OLLAMA CONFIG ────────────────────────────────────────────────────────────
-export const OLLAMA_MODEL = 'dolphin-raw'; // update to dolphin-llama3:8b-q4_0 after pull
+export const OLLAMA_MODEL = 'rawmind-v3';
 export const CONTEXT_WINDOW = 12;
 export const MAX_SUMMARY_THRESHOLD = 30;

@@ -6,6 +6,7 @@
 const express = require('express');
 const cors = require('cors');
 const chatRoutes = require('./routes/chat');
+const { OLLAMA_HOST, OLLAMA_MODEL, modelExists } = require('./services/ollama');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,6 +19,37 @@ app.use(express.json({ limit: '10mb' }));
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+app.get('/ready', async (req, res) => {
+  try {
+    const hasModel = await modelExists();
+
+    if (!hasModel) {
+      return res.status(503).json({
+        status: 'not_ready',
+        timestamp: new Date().toISOString(),
+        ollamaHost: OLLAMA_HOST,
+        model: OLLAMA_MODEL,
+        reason: `Model ${OLLAMA_MODEL} is not available yet`,
+      });
+    }
+
+    return res.json({
+      status: 'ready',
+      timestamp: new Date().toISOString(),
+      ollamaHost: OLLAMA_HOST,
+      model: OLLAMA_MODEL,
+    });
+  } catch (error) {
+    return res.status(503).json({
+      status: 'not_ready',
+      timestamp: new Date().toISOString(),
+      ollamaHost: OLLAMA_HOST,
+      model: OLLAMA_MODEL,
+      reason: error.message,
+    });
+  }
 });
 
 // Chat routes

@@ -1,10 +1,26 @@
 import { fetch as rnFetch } from 'react-native-fetch-api';
 import { ChatMessage, ChatMode, NicheId, Religion, SSEEvent } from '@/types';
 import { getSystemPrompt, CONTEXT_WINDOW } from '@/constants/niches';
+import { useAppStore } from '@/store';
 
-export const BACKEND_URL = 'http://10.151.66.43:3000';
+export const DEFAULT_BACKEND_URL = 'http://localhost:3000';
 const REQUEST_TIMEOUT = 120000;
 const CHUNK_BUFFER_SIZE = 20;
+
+function normalizeBackendUrl(url: string): string {
+  return url.trim().replace(/\/+$/, '');
+}
+
+export function getBackendUrl(): string {
+  const { backendUrlMode, customBackendUrl } = useAppStore.getState();
+  const normalizedCustomUrl = normalizeBackendUrl(customBackendUrl);
+
+  if (backendUrlMode === 'custom' && normalizedCustomUrl) {
+    return normalizedCustomUrl;
+  }
+
+  return DEFAULT_BACKEND_URL;
+}
 
 const buildContext = (messages: ChatMessage[]): { role: string; content: string }[] =>
   messages.slice(-CONTEXT_WINDOW).map((message) => ({ role: message.role, content: message.content }));
@@ -102,6 +118,7 @@ export const streamChat = async (
   signal?: AbortSignal
 ): Promise<void> => {
   const systemPrompt = getSystemPrompt(nicheId, religion, customPrompt);
+  const backendUrl = getBackendUrl();
   const context = buildContext(messages);
   const requestBody = {
     nicheId,
@@ -117,7 +134,7 @@ export const streamChat = async (
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
-    const response = await rnFetch(`${BACKEND_URL}/chat`, {
+    const response = await rnFetch(`${backendUrl}/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -226,11 +243,11 @@ export const streamChat = async (
 
     if (errorMsg.includes('Failed to fetch') || errorMsg.includes('Network')) {
       callbacks.onError(
-        `Cannot reach backend at ${BACKEND_URL}\n\n` +
+        `Cannot reach backend at ${backendUrl}\n\n` +
         `Checklist:\n` +
-        `✓ Backend running: npm start (in node-backend folder)\n` +
-        `✓ Ollama running with dolphin-raw\n` +
-        `✓ Phone WiFi: Same network as PC`
+        `✓ Docker container or backend is running\n` +
+        `✓ If you are using ngrok, paste the public URL in Sidebar > Backend\n` +
+        `✓ If you are on an emulator or another device, switch to a reachable custom URL`
       );
     } else if (errorMsg.includes('timeout')) {
       callbacks.onError('Request timeout — Ollama took too long (> 120s)');
@@ -245,7 +262,8 @@ export const chatOnce = async (
   userMessage: string
 ): Promise<string> => {
   try {
-    const response = await rnFetch(`${BACKEND_URL}/chat`, {
+    const backendUrl = getBackendUrl();
+    const response = await rnFetch(`${backendUrl}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
