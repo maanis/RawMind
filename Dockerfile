@@ -21,10 +21,22 @@ RUN apt-get update \
     procps \
     tar \
     tini \
-  && rm -rf /var/lib/apt/lists/*
+    zstd \
+  && rm -rf /var/lib/apt/lists/* \
+  && rm -rf /tmp/* /var/tmp/*
 
-RUN if ! command -v ollama &> /dev/null; then \
-      curl -fsSL https://ollama.com/install.sh | sh; \
+# Install Ollama only if not already present
+# Uses conditional check with proper error handling
+RUN set -eux; \
+    if ! command -v ollama &> /dev/null; then \
+      echo "📦 Installing Ollama..."; \
+      curl -fsSL https://ollama.com/install.sh | sh || { \
+        echo "❌ Ollama installation failed"; \
+        exit 1; \
+      }; \
+      echo "✅ Ollama installed successfully"; \
+    else \
+      echo "✅ Ollama already installed"; \
     fi
 
 RUN curl -fsSL "${NGROK_DOWNLOAD_URL}" -o /tmp/ngrok.tgz \
