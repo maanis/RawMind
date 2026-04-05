@@ -1,3 +1,5 @@
+version: '3.9'
+
 services:
   rawmind:
     build:
@@ -5,9 +7,17 @@ services:
       dockerfile: Dockerfile
     image: rawmind:local
     ports:
-      - "3000:3000"
+      - "3000:3000"      # Node.js backend
+      - "11434:11434"    # Ollama API (started as background service)
     environment:
       PORT: ${PORT:-3000}
+      OLLAMA_BIND_HOST: "0.0.0.0:11434"
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
       BRAVE_API_KEY: ${BRAVE_API_KEY:-}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
