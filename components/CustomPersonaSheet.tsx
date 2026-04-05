@@ -18,6 +18,8 @@ import { useAppStore } from '@/store';
 import { useTheme } from '@/hooks/useTheme';
 import { FONTS } from '@/constants/theme';
 import { buildCustomPersonaPrompt } from '@/services/ai';
+import { logError } from '@/utils/logger';
+import { safeString } from '@/utils/safe';
 
 const { height: screenHeight } = Dimensions.get('window');
 
@@ -60,6 +62,7 @@ export const CustomPersonaSheet: React.FC<Props> = ({ visible, onClose }) => {
       setPreview(refined);
       setStep('preview');
     } catch (e: any) {
+      logError('Failed to build custom persona prompt', e);
       setError(e?.message ?? 'Unknown error');
     } finally {
       setBuilding(false);
@@ -67,10 +70,21 @@ export const CustomPersonaSheet: React.FC<Props> = ({ visible, onClose }) => {
   };
 
   const handleActivate = () => {
-    setCustomPersonaPrompt(preview);
-    setNiche('custom');
-    createChat('custom', undefined, preview);
-    handleClose();
+    try {
+      const safePreview = safeString(preview).trim();
+      if (!safePreview) {
+        setError('Persona prompt cannot be empty.');
+        return;
+      }
+
+      setCustomPersonaPrompt(safePreview);
+      setNiche('custom');
+      createChat('custom', undefined, safePreview);
+      handleClose();
+    } catch (error) {
+      logError('Failed to activate custom persona', error);
+      setError('Could not activate persona. Please try again.');
+    }
   };
 
   return (

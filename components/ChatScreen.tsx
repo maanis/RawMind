@@ -24,6 +24,8 @@ import { CustomPersonaSheet } from '@/components/CustomPersonaSheet';
 import { FONTS } from '@/constants/theme';
 import { NICHES } from '@/constants/niches';
 import { ChatMessage } from '@/types';
+import { logError } from '@/utils/logger';
+import { safeArray, safeString } from '@/utils/safe';
 
 const AUTO_SCROLL_THRESHOLD = 80;
 const COMPOSER_EXTRA_BOTTOM_PADDING = 14;
@@ -62,6 +64,7 @@ export const ChatScreen: React.FC = () => {
     regenerateAtMessage,
     stopStreaming,
   } = useChat(chatId);
+  const safeMessages = safeArray<ChatMessage>(messages);
 
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
   const isNearBottomRef = useRef(true);
@@ -75,15 +78,19 @@ export const ChatScreen: React.FC = () => {
 
   // Scroll when messages update or status appears
   useEffect(() => {
-    if (messages.length > 0 || actionMessage || statusMessage) {
+    if (safeMessages.length > 0 || actionMessage || statusMessage) {
       isNearBottomRef.current = true;
       scrollToBottom(true);
     }
-  }, [actionMessage, messages.length, isStreaming, statusMessage, scrollToBottom]);
+  }, [actionMessage, safeMessages.length, isStreaming, statusMessage, scrollToBottom]);
 
   useEffect(() => {
     return () => {
-      Speech.stop();
+      try {
+        Speech.stop();
+      } catch (error) {
+        logError('Failed to stop speech on unmount', error);
+      }
     };
   }, []);
 
@@ -93,10 +100,14 @@ export const ChatScreen: React.FC = () => {
     if (prevNicheRef.current !== nicheId) {
       prevNicheRef.current = nicheId;
       if (nicheId !== 'custom') {
-        createChat(nicheId, nicheId === 'religion' ? religion : undefined);
+        try {
+          createChat(nicheId, nicheId === 'religion' ? religion : undefined);
+        } catch (error) {
+          logError('Failed to create chat after niche change', error);
+        }
       }
     }
-  }, [nicheId]);
+  }, [createChat, nicheId, religion]);
 
   // Android keyboard handling
   useEffect(() => {
@@ -135,7 +146,13 @@ export const ChatScreen: React.FC = () => {
         return;
       }
       if (!activeChatId) {
-        const newChat = createChat(nicheId, nicheId === 'religion' ? religion : undefined);
+        let newChat;
+        try {
+          newChat = createChat(nicheId, nicheId === 'religion' ? religion : undefined);
+        } catch (error) {
+          logError('Failed to create chat before sending message', error);
+          return;
+        }
         await sendMessage(text, newChat.id);
         return;
       }
@@ -145,14 +162,14 @@ export const ChatScreen: React.FC = () => {
   );
 
   const handleEditMessage = useCallback((message: ChatMessage) => {
-    setDraftText(message.content);
+    setDraftText(safeString(message.content));
     setEditingMessageId(message.id);
     setActiveActionMessageId(null);
     setInputFocusSignal((value) => value + 1);
   }, []);
 
   const handlePlayMessage = useCallback((message: ChatMessage) => {
-    const plainText = message.content
+    const plainText = safeString(message.content)
       .replace(/```[\s\S]*?```/g, ' code block ')
       .replace(/`([^`]+)`/g, '$1')
       .replace(/[#>*_\-\[\]\(\)]/g, ' ')
@@ -162,18 +179,27 @@ export const ChatScreen: React.FC = () => {
     if (!plainText) return;
 
     if (playingMessageId === message.id) {
-      Speech.stop();
+      try {
+        Speech.stop();
+      } catch (error) {
+        logError('Failed to stop speech playback', error);
+      }
       setPlayingMessageId(null);
       return;
     }
 
-    Speech.stop();
-    setPlayingMessageId(message.id);
-    Speech.speak(plainText, {
-      onDone: () => setPlayingMessageId(null),
-      onStopped: () => setPlayingMessageId(null),
-      onError: () => setPlayingMessageId(null),
-    });
+    try {
+      Speech.stop();
+      setPlayingMessageId(message.id);
+      Speech.speak(plainText, {
+        onDone: () => setPlayingMessageId(null),
+        onStopped: () => setPlayingMessageId(null),
+        onError: () => setPlayingMessageId(null),
+      });
+    } catch (error) {
+      logError('Failed to start speech playback', error);
+      setPlayingMessageId(null);
+    }
   }, [playingMessageId]);
 
   const handleRegenerate = useCallback(async (message: ChatMessage) => {
@@ -185,7 +211,7 @@ export const ChatScreen: React.FC = () => {
     ({ item, index }: { item: ChatMessage; index: number }) => {
       if (!item) return null;
       const isActiveAssistantMessage =
-        index === messages.length - 1 && item.role === 'assistant';
+        index === safeMessages.length - 1 && item.role === 'assistant';
 
       return (
         <MessageBubble
@@ -209,14 +235,14 @@ export const ChatScreen: React.FC = () => {
       handlePlayMessage,
       handleRegenerate,
       isStreaming,
-      messages.length,
+      safeMessages.length,
       playingMessageId,
       actionMessage,
       statusMessage,
     ]
   );
 
-  const keyExtractor = useCallback((item: ChatMessage) => item.id, []);
+  const keyExtractor = useCallback((item: ChatMessage, index: number) => item?.id || `message-${index}`, []);
 
   const EmptyState = () => (
     <View style={styles.emptyState}>
@@ -241,7 +267,7 @@ export const ChatScreen: React.FC = () => {
     <>
       <FlatList
         ref={flatListRef}
-        data={messages}
+        data={safeMessages}
         extraData={{
           actionMessage,
           statusMessage,
@@ -253,12 +279,12 @@ export const ChatScreen: React.FC = () => {
         keyExtractor={keyExtractor}
         contentContainerStyle={[
           styles.messageList,
-          messages.length === 0 && styles.messageListEmpty,
+          safeMessages.length === 0 && styles.messageListEmpty,
         ]}
         ListEmptyComponent={EmptyState}
         ListFooterComponent={null}
         onContentSizeChange={() => {
-          if ((messages.length > 0 || actionMessage || statusMessage) && isNearBottomRef.current) {
+          if ((safeMessages.length > 0 || actionMessage || statusMessage) && isNearBottomRef.current) {
             scrollToBottom(!isStreaming);
           }
         }}
@@ -318,13 +344,17 @@ export const ChatScreen: React.FC = () => {
 
         <View style={styles.headerCenter}>
           <Text style={[styles.headerPersona, { color: colors.text, fontFamily: FONTS.serifMedium }]}>
-            {currentNiche?.icon} {currentNiche?.persona ?? 'RawMind'}
+            {currentNiche?.icon ?? '⚡'} {currentNiche?.persona ?? 'RawMind'}
           </Text>
         </View>
 
         <TouchableOpacity
           onPress={() => {
-            createChat(nicheId, nicheId === 'religion' ? religion : undefined);
+            try {
+              createChat(nicheId, nicheId === 'religion' ? religion : undefined);
+            } catch (error) {
+              logError('Failed to create chat from header button', error);
+            }
           }}
           style={styles.headerBtn}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}

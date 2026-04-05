@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Stack } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -14,36 +14,57 @@ import {
   SourceSans3_500Medium,
   SourceSans3_600SemiBold,
 } from '@expo-google-fonts/source-sans-3';
+import { Text, View, StyleSheet } from 'react-native';
+
 import { useAppStore } from '@/store';
 import { useTheme } from '@/hooks/useTheme';
-import { View } from 'react-native';
+import { AppErrorBoundary } from '@/components/AppErrorBoundary';
+import { installGlobalErrorHandling, logError } from '@/utils/logger';
+import { toErrorMessage, withTimeout } from '@/utils/safe';
 
-SplashScreen.preventAutoHideAsync().catch(() => {});
+// Prevent auto hide (safe)
+SplashScreen.preventAutoHideAsync().catch(() => { });
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 1000 * 60 * 5, retry: 1 },
+    queries: {
+      staleTime: 1000 * 60 * 5,
+      retry: 1,
+    },
   },
 });
 
-function RootLayoutNav() {
+function RootLayoutNav({ fontsReady }: { fontsReady: boolean }) {
   const { colors, isDark } = useTheme();
-  const hydrate = useAppStore((s) => s.hydrate);
+  const hydrate = useAppStore((state) => state.hydrate);
+
   const [initReady, setInitReady] = useState(false);
-  const [splashHidden, setSplashHidden] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
-    const initialize = async () => {
+    const initialize = () => {
       try {
-        await hydrate();
-        await new Promise((resolve) => setTimeout(resolve, 350));
+        // 🔥 NON-BLOCKING hydration (IMPORTANT FIX)
+        withTimeout(hydrate(), 6000).catch((error) => {
+          logError('Hydration failed', error);
+          if (isMounted) {
+            setInitError(toErrorMessage(error, 'App initialization failed.'));
+          }
+        });
       } catch (error) {
-        console.error('App initialization failed', error);
+        logError('Init crash', error);
+        if (isMounted) {
+          setInitError(toErrorMessage(error));
+        }
       } finally {
-        if (!isMounted) return;
-        setInitReady(true);
+        // ✅ ALWAYS allow UI to render
+        if (isMounted) {
+          setTimeout(() => {
+            setInitReady(true);
+          }, 300);
+        }
       }
     };
 
@@ -54,32 +75,67 @@ function RootLayoutNav() {
     };
   }, [hydrate]);
 
+  const appReady = initReady && fontsReady;
+
   useEffect(() => {
-    if (!initReady || splashHidden) return;
+    if (!appReady) return;
 
-    let isMounted = true;
+    let cancelled = false;
 
-    const finishSplash = async () => {
-      await SplashScreen.hideAsync().catch(() => {});
-      if (isMounted) {
-        setSplashHidden(true);
+    const hideSplash = async () => {
+      try {
+        await SplashScreen.hideAsync();
+      } catch (error) {
+        if (!cancelled) {
+          logError('Failed to hide splash', error);
+        }
       }
     };
 
-    finishSplash();
+    hideSplash();
 
     return () => {
-      isMounted = false;
+      cancelled = true;
     };
-  }, [initReady, splashHidden]);
+  }, [appReady]);
 
-  if (!splashHidden) {
-    return null;
+  // 👇 Loading screen (VERY IMPORTANT fallback)
+  if (!appReady) {
+    return (
+      <View
+        style={[
+          styles.loadingScreen,
+          { backgroundColor: colors.background },
+        ]}
+      />
+    );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <View style={[styles.appShell, { backgroundColor: colors.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
+
+      {initError && (
+        <View
+          style={[
+            styles.errorBanner,
+            {
+              backgroundColor: colors.accentLight,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.errorBannerText,
+              { color: colors.textSecondary },
+            ]}
+          >
+            {initError} Defaults were restored.
+          </Text>
+        </View>
+      )}
+
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
       </Stack>
@@ -88,7 +144,7 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     SourceSerif4_400Regular,
     SourceSerif4_600SemiBold,
     SourceSans3_400Regular,
@@ -96,13 +152,51 @@ export default function RootLayout() {
     SourceSans3_600SemiBold,
   });
 
-  if (!fontsLoaded) return null;
+  useEffect(() => {
+    installGlobalErrorHandling();
+  }, []);
+
+  useEffect(() => {
+    if (fontError) {
+      logError('Font loading failed', fontError);
+    }
+  }, [fontError]);
+
+  // ✅ NEVER block UI because of fonts
+  const fontsReady = useMemo(
+    () => fontsLoaded || Boolean(fontError),
+    [fontsLoaded, fontError]
+  );
 
   return (
-    <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <RootLayoutNav />
-      </QueryClientProvider>
-    </SafeAreaProvider>
+    <AppErrorBoundary>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <RootLayoutNav fontsReady={fontsReady} />
+        </QueryClientProvider>
+      </SafeAreaProvider>
+    </AppErrorBoundary>
   );
 }
+
+const styles = StyleSheet.create({
+  appShell: {
+    flex: 1,
+  },
+  loadingScreen: {
+    flex: 1,
+  },
+  errorBanner: {
+    marginHorizontal: 12,
+    marginTop: 12,
+    marginBottom: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  errorBannerText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+});

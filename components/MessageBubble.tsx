@@ -14,6 +14,8 @@ import { ChatMessage } from '@/types';
 import { useTheme } from '@/hooks/useTheme';
 import { FONTS } from '@/constants/theme';
 import { ThemeColors } from '@/constants/theme';
+import { logError } from '@/utils/logger';
+import { safeString } from '@/utils/safe';
 
 interface Props {
   message: ChatMessage;
@@ -151,9 +153,10 @@ export const MessageBubble: React.FC<Props> = ({
   const { colors } = useTheme();
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
+  const messageContent = safeString(message.content);
 
   const segments = useMemo(() => {
-    const parsed = parseRichContent(message.content);
+    const parsed = parseRichContent(messageContent);
 
     if (!isStreaming) {
       return parsed;
@@ -171,14 +174,18 @@ export const MessageBubble: React.FC<Props> = ({
     }
 
     return [...withCursor, { type: 'markdown', content: '▋' } as RichSegment];
-  }, [isStreaming, message.content]);
+  }, [isStreaming, messageContent]);
 
   const handleCopy = async () => {
-    await Clipboard.setStringAsync(message.content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
-    if (isUser) {
-      onDismissActions?.();
+    try {
+      await Clipboard.setStringAsync(messageContent);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+      if (isUser) {
+        onDismissActions?.();
+      }
+    } catch (error) {
+      logError('Failed to copy message content', error);
     }
   };
 
@@ -304,8 +311,8 @@ export const MessageBubble: React.FC<Props> = ({
     },
   };
 
-  const responseActionsVisible = !isUser && !isStreaming && message.content.trim() !== '';
-  const userActionsVisible = isUser && actionsVisible && !isStreaming && message.content.trim() !== '';
+  const responseActionsVisible = !isUser && !isStreaming && messageContent.trim() !== '';
+  const userActionsVisible = isUser && actionsVisible && !isStreaming && messageContent.trim() !== '';
   const showPipelinePrelude = !isUser && (Boolean(leadText) || Boolean(statusText));
 
   const actionColor = copied ? colors.success : colors.textMuted;
@@ -362,7 +369,7 @@ export const MessageBubble: React.FC<Props> = ({
               </View>
             ) : null}
 
-            {message.content.trim() !== '' ? (
+            {messageContent.trim() !== '' ? (
               <View>
                 {segments.map((segment, index) => {
                   if (!isTableSegment(segment)) {
@@ -452,9 +459,13 @@ const CodeBlock: React.FC<{ code: string; colors: any }> = ({ code, colors }) =>
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
-    await Clipboard.setStringAsync(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await Clipboard.setStringAsync(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      logError('Failed to copy code block', error);
+    }
   };
 
   return (

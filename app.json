@@ -29,7 +29,9 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": [],
+    "plugins": [
+      "./app.plugin.js"
+    ],
     "jsEngine": "hermes",
     "extra": {
       "eas": {

@@ -21,6 +21,21 @@ export const StatusBubble: React.FC<Props> = ({ message }) => {
   const pulseAnim = useRef(new Animated.Value(0.4)).current;
 
   useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 0.4,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
     if (message) {
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -28,21 +43,7 @@ export const StatusBubble: React.FC<Props> = ({ message }) => {
         useNativeDriver: true,
       }).start();
 
-      // Pulsing dot animation
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 600,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 0.4,
-            duration: 600,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
+      pulseLoop.start();
     } else {
       Animated.timing(fadeAnim, {
         toValue: 0,
@@ -50,6 +51,12 @@ export const StatusBubble: React.FC<Props> = ({ message }) => {
         useNativeDriver: true,
       }).start();
     }
+
+    return () => {
+      pulseLoop.stop();
+      fadeAnim.stopAnimation();
+      pulseAnim.stopAnimation();
+    };
   }, [message]);
 
   if (!message) return null;

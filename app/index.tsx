@@ -4,6 +4,7 @@ import { useAppStore } from '@/store';
 import { useTheme } from '@/hooks/useTheme';
 import { ChatScreen } from '@/components/ChatScreen';
 import { Sidebar } from '@/components/Sidebar';
+import { logError } from '@/utils/logger';
 
 export default function Index() {
   const { colors } = useTheme();
@@ -11,10 +12,16 @@ export default function Index() {
 
   // Ensure there's always an active chat on first launch
   useEffect(() => {
-    if (!activeChatId) {
-      createChat(nicheId, nicheId === 'religion' ? religion : undefined);
+    if (activeChatId) {
+      return;
     }
-  }, []);
+
+    try {
+      createChat(nicheId, nicheId === 'religion' ? religion : undefined);
+    } catch (error) {
+      logError('Failed to create initial chat', error);
+    }
+  }, [activeChatId, createChat, nicheId, religion]);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>

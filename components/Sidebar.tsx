@@ -15,6 +15,9 @@ import { useTheme } from '@/hooks/useTheme';
 import { FONTS } from '@/constants/theme';
 import { NICHES } from '@/constants/niches';
 import { getDefaultBackendUrl } from '@/services/ai';
+import { logError } from '@/utils/logger';
+import { isValidHttpUrl, safeArray, safeString } from '@/utils/safe';
+import { Chat } from '@/types';
 
 const SIDEBAR_WIDTH = '78%';
 
@@ -40,32 +43,50 @@ export const Sidebar: React.FC = () => {
     setCustomBackendUrl,
   } = useAppStore();
   const [backendUrlDraft, setBackendUrlDraft] = useState(customBackendUrl);
+  const [backendUrlError, setBackendUrlError] = useState('');
 
   useEffect(() => {
     setBackendUrlDraft(customBackendUrl);
+    setBackendUrlError('');
   }, [customBackendUrl, sidebarOpen]);
 
   const handleNewChat = () => {
-    const newChat = createChat(nicheId, nicheId === 'religion' ? religion : undefined);
-    setActiveChat(newChat.id);
-    setSidebarOpen(false);
+    try {
+      const newChat = createChat(nicheId, nicheId === 'religion' ? religion : undefined);
+      setActiveChat(newChat.id);
+      setSidebarOpen(false);
+    } catch (error) {
+      logError('Failed to create chat from sidebar', error);
+    }
   };
 
   const effectiveBackendUrl =
-    backendUrlMode === 'custom' && customBackendUrl ? customBackendUrl : getDefaultBackendUrl();
+    backendUrlMode === 'custom' && customBackendUrl
+      ? customBackendUrl
+      : getDefaultBackendUrl() || 'Not configured';
 
   const handleSaveBackendUrl = () => {
     const normalizedUrl = backendUrlDraft.trim().replace(/\/+$/, '');
-    if (!normalizedUrl) return;
+    if (!normalizedUrl) {
+      setBackendUrlError('Enter a full http:// or https:// backend URL.');
+      return;
+    }
+
+    if (!isValidHttpUrl(normalizedUrl)) {
+      setBackendUrlError('Backend URL must start with http:// or https:// and be reachable from the device.');
+      return;
+    }
+
     setCustomBackendUrl(normalizedUrl);
     setBackendUrlMode('custom');
+    setBackendUrlError('');
   };
 
   if (!sidebarOpen) return null;
 
   // Group chats by niche for organised history
-  const chatsByNiche: Record<string, typeof chats> = {};
-  chats.slice(0, 30).forEach((chat) => {
+  const chatsByNiche: Record<string, Chat[]> = {};
+  safeArray<Chat>(chats).slice(0, 30).forEach((chat) => {
     if (!chatsByNiche[chat.nicheId]) chatsByNiche[chat.nicheId] = [];
     chatsByNiche[chat.nicheId].push(chat);
   });
@@ -146,8 +167,12 @@ export const Sidebar: React.FC = () => {
                       <TouchableOpacity
                         key={chat.id}
                         onPress={() => {
-                          setActiveChat(chat.id);
-                          setSidebarOpen(false);
+                          try {
+                            setActiveChat(chat.id);
+                            setSidebarOpen(false);
+                          } catch (error) {
+                            logError('Failed to switch active chat', error);
+                          }
                         }}
                         style={[
                           styles.chatHistoryItem,
@@ -163,10 +188,16 @@ export const Sidebar: React.FC = () => {
                           ]}
                           numberOfLines={1}
                         >
-                          {chat.title}
+                          {safeString(chat.title) || 'Untitled chat'}
                         </Text>
                         <TouchableOpacity
-                          onPress={() => deleteChat(chat.id)}
+                          onPress={() => {
+                            try {
+                              deleteChat(chat.id);
+                            } catch (error) {
+                              logError('Failed to delete chat', error);
+                            }
+                          }}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
                           <Ionicons name="trash-outline" size={13} color={colors.textMuted} />
@@ -220,7 +251,7 @@ export const Sidebar: React.FC = () => {
             {effectiveBackendUrl}
           </Text>
           <Text style={[styles.backendHint, { color: colors.textMuted, fontFamily: FONTS.sans }]}>
-            Uses your Expo host IP by default. Paste a LAN/ngrok URL for Docker or remote access.
+            Uses your configured release URL or Expo host IP when available. Paste a LAN, ngrok, or production URL for APK builds.
           </Text>
           <TextInput
             value={backendUrlDraft}
@@ -240,9 +271,17 @@ export const Sidebar: React.FC = () => {
               },
             ]}
           />
+          {backendUrlError ? (
+            <Text style={[styles.backendError, { color: colors.danger, fontFamily: FONTS.sans }]}>
+              {backendUrlError}
+            </Text>
+          ) : null}
           <View style={styles.backendActions}>
             <TouchableOpacity
-              onPress={() => setBackendUrlMode('default')}
+              onPress={() => {
+                setBackendUrlMode('default');
+                setBackendUrlError('');
+              }}
               style={[
                 styles.backendActionBtn,
                 {
@@ -396,6 +435,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
+    marginBottom: 10,
+  },
+  backendError: {
+    fontSize: 12,
+    lineHeight: 17,
     marginBottom: 10,
   },
   backendActions: {

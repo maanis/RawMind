@@ -14,6 +14,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { FONTS } from '@/constants/theme';
 import { NICHES, RELIGIONS } from '@/constants/niches';
 import { NicheId, Religion } from '@/types';
+import { logError } from '@/utils/logger';
 
 const { height: screenHeight } = Dimensions.get('window');
 const SHEET_HEIGHT = screenHeight * 0.7; // 70% of screen
@@ -50,17 +51,25 @@ export const NicheBottomSheet: React.FC<Props> = ({ visible, onClose }) => {
             setCustomPersonaSheetOpen(true);
             return;
         }
-        setNiche(id);
-        if (id !== 'religion') {
-            createChat(id);
-            onClose();
+        try {
+            setNiche(id);
+            if (id !== 'religion') {
+                createChat(id);
+                onClose();
+            }
+        } catch (error) {
+            logError('Failed to switch niche', error);
         }
     };
 
     const handleReligionSelect = (r: Religion) => {
-        setReligion(r);
-        createChat('religion', r);
-        onClose();
+        try {
+            setReligion(r);
+            createChat('religion', r);
+            onClose();
+        } catch (error) {
+            logError('Failed to switch religion niche', error);
+        }
     };
 
     if (!visible) {
